@@ -31,7 +31,12 @@ files:
   - icon.png
   - images/tizen_32.png
   - index.html
+  - js/api/immich-client.js
+  - js/app.js
+  - js/input/remote.js
   - js/main.js
+  - js/storage/settings.js
+  - js/ui/router.js
 
 # list of files to exclude based on the matched patterns
 excludes:
@@ -60,4 +65,3 @@ excludes:
 
 # project dependencies
 deps: []
-
