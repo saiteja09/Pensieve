@@ -29,6 +29,7 @@ trust_anchor: []
 files:
   - css/style.css
   - icon.png
+  - images/app-icon.svg
   - images/nav/albums.svg
   - images/nav/favorites.svg
   - images/nav/library.svg

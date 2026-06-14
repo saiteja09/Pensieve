@@ -107,7 +107,7 @@
     App.prototype.renderBoot = function (message) {
         this.root.innerHTML = [
             '<section class="boot-screen">',
-            '  <div class="brand-mark">P</div>',
+            '  <div class="brand-mark"><img src="images/app-icon.svg" alt="" /></div>',
             '  <h1>Pensieve</h1>',
             '  <p>' + escapeHtml(message || 'Starting...') + '</p>',
             '</section>'
@@ -129,9 +129,9 @@
         } else if (route.name === 'albums') {
             this.renderAlbums();
         } else if (route.name === 'favorites') {
-            this.renderMediaPage('favorites', 'Favorites', 'Photos and videos marked as favorites in Immich.', sampleMedia.slice(0, 6));
+            this.renderMediaPage('favorites', 'Favorites', '', sampleMedia.slice(0, 6));
         } else if (route.name === 'videos') {
-            this.renderMediaPage('videos', 'Videos', 'Clips from your Immich library, ready for TV playback.', sampleMedia.filter(function (item) {
+            this.renderMediaPage('videos', 'Videos', '', sampleMedia.filter(function (item) {
                 return item.type === 'video';
             }).concat(sampleMedia.slice(1, 4)));
         } else {
@@ -157,7 +157,7 @@
             '<section class="login-screen">',
             '  <div class="login-brand">',
             '    <div class="brand-row">',
-            '      <div class="brand-mark">P</div>',
+            '      <div class="brand-mark"><img src="images/app-icon.svg" alt="" /></div>',
             '      <h1>Pensieve for Immich</h1>',
             '    </div>',
             '    <p class="login-copy">Experience your Immich memories on the big screen. Sign in once, then browse from the couch.</p>',
@@ -220,12 +220,12 @@
         }
 
         if (state.loading && !state.items.length) {
-            this.renderGridStatus('recent', 'Library', 'Exploring your latest memories from all connected devices.', 'Loading your latest Immich memories...');
+            this.renderGridStatus('recent', 'Library', '', 'Loading your latest Immich memories...');
             return;
         }
 
         if (state.error && !state.items.length) {
-            this.renderGridStatus('recent', 'Library', 'Exploring your latest memories from all connected devices.', 'Unable to load recent media.', 'Retry', 'retryRecent');
+            this.renderGridStatus('recent', 'Library', '', 'Unable to load recent media.', 'Retry', 'retryRecent');
             return;
         }
 
@@ -235,7 +235,7 @@
                 return;
             }
 
-            this.renderGridStatus('recent', 'Library', 'Exploring your latest memories from all connected devices.', 'No recent photos or videos were found.');
+            this.renderGridStatus('recent', 'Library', '', 'No recent photos or videos were found.');
             return;
         }
 
@@ -270,7 +270,7 @@
             return 'Showing memories from ' + filter.label + '. Clear the filter to return to latest memories.';
         }
 
-        return 'Exploring your latest memories from all connected devices.';
+        return '';
     };
 
     App.prototype.recentToolbar = function () {
@@ -313,7 +313,7 @@
             }).join(''),
             '    </div>',
             '  </section>',
-            '  <button class="text-action focusable" type="button" data-action="recent">Back to Library</button>',
+            '  <button class="primary-action compact-action focusable" type="button" data-action="recent">Back to Library</button>',
             '</main>'
         ].join(''));
     };
@@ -333,7 +333,7 @@
     App.prototype.renderAlbums = function () {
         this.root.innerHTML = this.shell('albums', [
             '<main class="content-canvas">',
-            this.pageHeader('Albums', 'Personal collections, trips, events, and shared libraries.'),
+            this.pageHeader('Albums', ''),
             '  <div class="filter-row">',
             '    <button class="filter-chip active focusable" type="button" data-action="comingSoon">All albums</button>',
             '    <button class="filter-chip focusable" type="button" data-action="comingSoon">Shared</button>',
@@ -352,7 +352,7 @@
         var version = this.settings.serverVersion ? 'Immich ' + this.settings.serverVersion : 'Version unknown';
         this.root.innerHTML = this.shell('settings', [
             '<main class="settings-canvas">',
-            this.pageHeader('Settings', 'Connection, account, slideshow, and TV display preferences.'),
+            this.pageHeader('Settings', ''),
             '  <div class="settings-list">',
             this.settingsItem('Server Connection', server + ' - ' + version, 'DNS', 'serverConnection'),
             this.settingsItem('Account', account, 'USR', 'accountDetails'),
@@ -378,7 +378,7 @@
     App.prototype.navRail = function (activeRoute) {
         return [
             '<aside class="nav-rail" aria-label="Primary navigation">',
-            '  <div class="rail-brand">P</div>',
+            '  <div class="rail-brand"><img src="images/app-icon.svg" alt="" /></div>',
             '  <nav class="rail-items">',
             navItems.map(function (item) {
                 var active = item.action === activeRoute ? ' active' : '';
@@ -417,7 +417,7 @@
         return [
             '<header class="page-header">',
             '  <h1>' + escapeHtml(title) + '</h1>',
-            '  <p>' + escapeHtml(subtitle) + '</p>',
+            subtitle ? '  <p>' + escapeHtml(subtitle) + '</p>' : '',
             '</header>'
         ].join('');
     };
