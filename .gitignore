@@ -1,0 +1,22 @@
+# Local development documentation
+devdocs/
+
+# Tizen build output
+Debug/
+Release/
+Build/
+Test/
+*.wgt
+
+# Tizen generated/intermediate files
+.buildResult/
+.package/
+.rds_delta
+.sdk_delta.info
+.sign/
+
+# Editor/system noise
+.vscode/
+.idea/
+Thumbs.db
+Desktop.ini
