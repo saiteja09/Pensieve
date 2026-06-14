@@ -38,6 +38,10 @@ files:
   - images/thumbnail-unavailable.svg
   - images/tizen_32.png
   - index.html
+  - js/app/config.js
+  - js/app/focus.js
+  - js/app/helpers.js
+  - js/app/viewer.js
   - js/api/immich-client.js
   - js/app.js
   - js/input/remote.js
