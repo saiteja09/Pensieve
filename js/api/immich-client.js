@@ -58,12 +58,75 @@
         return this.request('/users/me');
     };
 
+    ImmichClient.prototype.searchAssets = function (params) {
+        return this.request('/search/metadata', {
+            method: 'POST',
+            body: params || {}
+        });
+    };
+
+    ImmichClient.prototype.getTimelineBucket = function (timeBucket) {
+        var query = [
+            'timeBucket=' + encodeURIComponent(timeBucket),
+            'visibility=timeline',
+            'withPartners=true',
+            'withStacked=true'
+        ].join('&');
+
+        return this.request('/timeline/bucket?' + query);
+    };
+
+    ImmichClient.prototype.getAssetThumbnailBlob = function (assetId, options) {
+        var thumbnailOptions = options || {};
+        var size = thumbnailOptions.size || 'thumbnail';
+        return this.requestBlob('/assets/' + encodeURIComponent(assetId) + '/thumbnail?size=' + encodeURIComponent(size));
+    };
+
     ImmichClient.prototype.request = function (path, options) {
         var requestOptions = options || {};
+        var fetchOptions = this.createFetchOptions(requestOptions);
+
+        return fetchWithTimeout(this.url(path), fetchOptions, this.timeoutMs).then(function (response) {
+            return parseResponse(response).then(function (payload) {
+                if (!response.ok) {
+                    throw createHttpError(response, payload);
+                }
+
+                return payload;
+            });
+        }).catch(function (error) {
+            if (error instanceof ImmichError) {
+                throw error;
+            }
+
+            throw new ImmichError('NETWORK_UNAVAILABLE', 'Unable to reach the Immich server.', error);
+        });
+    };
+
+    ImmichClient.prototype.requestBlob = function (path, options) {
+        var fetchOptions = this.createFetchOptions(options || {});
+
+        return fetchWithTimeout(this.url(path), fetchOptions, this.timeoutMs).then(function (response) {
+            if (!response.ok) {
+                return parseResponse(response).then(function (payload) {
+                    throw createHttpError(response, payload);
+                });
+            }
+
+            return response.blob();
+        }).catch(function (error) {
+            if (error instanceof ImmichError) {
+                throw error;
+            }
+
+            throw new ImmichError('NETWORK_UNAVAILABLE', 'Unable to reach the Immich server.', error);
+        });
+    };
+
+    ImmichClient.prototype.createFetchOptions = function (requestOptions) {
         var method = requestOptions.method || 'GET';
         var headers = Object.assign({}, requestOptions.headers || {});
         var shouldAuth = requestOptions.auth !== false;
-        var url = this.url(path);
         var fetchOptions = {
             method: method,
             headers: headers
@@ -82,21 +145,7 @@
             }
         }
 
-        return fetchWithTimeout(url, fetchOptions, this.timeoutMs).then(function (response) {
-            return parseResponse(response).then(function (payload) {
-                if (!response.ok) {
-                    throw createHttpError(response, payload);
-                }
-
-                return payload;
-            });
-        }).catch(function (error) {
-            if (error instanceof ImmichError) {
-                throw error;
-            }
-
-            throw new ImmichError('NETWORK_UNAVAILABLE', 'Unable to reach the Immich server.', error);
-        });
+        return fetchOptions;
     };
 
     ImmichClient.prototype.url = function (path) {

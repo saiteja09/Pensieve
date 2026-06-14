@@ -2,11 +2,11 @@
     var namespace = global.Pensieve = global.Pensieve || {};
 
     var navItems = [
-        { action: 'recent', label: 'Photos', icon: 'P' },
-        { action: 'albums', label: 'Albums', icon: 'A' },
-        { action: 'favorites', label: 'Favorites', icon: 'F' },
-        { action: 'videos', label: 'Videos', icon: 'V' },
-        { action: 'settings', label: 'Settings', icon: 'S' }
+        { action: 'recent', label: 'Photos', icon: 'photos' },
+        { action: 'albums', label: 'Albums', icon: 'albums' },
+        { action: 'favorites', label: 'Favorites', icon: 'heart' },
+        { action: 'videos', label: 'Videos', icon: 'video' },
+        { action: 'settings', label: 'Settings', icon: 'settings' }
     ];
 
     var sampleMedia = [
@@ -39,6 +39,16 @@
         this.remote = null;
         this.isBusy = false;
         this.sessionStatus = 'checking';
+        this.mediaState = {
+            recent: createMediaState()
+        };
+        this.thumbnailUrls = {};
+        this.thumbnailLoads = {};
+        this.thumbnailErrors = {};
+        this.thumbnailTimer = null;
+        this.pendingFocusAssetId = null;
+        this.pendingScrollTop = null;
+        this.dateJumpYear = new Date().getFullYear();
     }
 
     App.prototype.start = function () {
@@ -114,6 +124,8 @@
             this.renderSetup();
         } else if (route.name === 'settings') {
             this.renderSettings();
+        } else if (route.name === 'dateJump') {
+            this.renderDateJump();
         } else if (route.name === 'albums') {
             this.renderAlbums();
         } else if (route.name === 'favorites') {
@@ -123,7 +135,7 @@
                 return item.type === 'video';
             }).concat(sampleMedia.slice(1, 4)));
         } else {
-            this.renderMediaPage('recent', 'Recents', 'Exploring your latest memories from all connected devices.', sampleMedia);
+            this.renderRecent();
         }
 
         this.captureFocusables();
@@ -200,6 +212,124 @@
         ].join(''));
     };
 
+    App.prototype.renderRecent = function () {
+        var state = this.mediaState.recent;
+
+        if (!state.loaded && !state.loading && !state.error) {
+            this.loadRecentMedia();
+        }
+
+        if (state.loading && !state.items.length) {
+            this.renderGridStatus('recent', 'Recents', 'Exploring your latest memories from all connected devices.', 'Loading your latest Immich memories...');
+            return;
+        }
+
+        if (state.error && !state.items.length) {
+            this.renderGridStatus('recent', 'Recents', 'Exploring your latest memories from all connected devices.', 'Unable to load recent media.', 'Retry', 'retryRecent');
+            return;
+        }
+
+        if (state.loaded && !state.items.length) {
+            if (state.filter) {
+                this.renderGridStatus('recent', 'Recents', this.recentSubtitle(), 'No photos or videos were found for ' + state.filter.label + '.', 'Clear filter', 'clearRecentFilter');
+                return;
+            }
+
+            this.renderGridStatus('recent', 'Recents', 'Exploring your latest memories from all connected devices.', 'No recent photos or videos were found.');
+            return;
+        }
+
+        this.renderRecentTimeline(state.items);
+        this.loadVisibleThumbnails(state.items);
+    };
+
+    App.prototype.renderRecentTimeline = function (items) {
+        var groups = groupMediaByDate(items);
+
+        this.root.innerHTML = this.shell('recent', [
+            '<main class="content-canvas timeline-canvas">',
+            this.pageHeader('Recents', this.recentSubtitle()),
+            this.recentToolbar(),
+            groups.map(function (group) {
+                return [
+                    '  <section class="date-section timeline-section">',
+                    '    <div class="section-heading compact-heading"><h2>' + escapeHtml(group.label) + '</h2><span>' + group.items.length + ' item' + (group.items.length === 1 ? '' : 's') + '</span></div>',
+                    '    <div class="media-grid timeline-grid">',
+                    group.items.map(this.mediaTile).join(''),
+                    '    </div>',
+                    '  </section>'
+                ].join('');
+            }, this).join(''),
+            '</main>'
+        ].join(''));
+    };
+
+    App.prototype.recentSubtitle = function () {
+        var filter = this.mediaState.recent.filter;
+        if (filter) {
+            return 'Showing memories from ' + filter.label + '. Clear the filter to return to latest memories.';
+        }
+
+        return 'Exploring your latest memories from all connected devices.';
+    };
+
+    App.prototype.recentToolbar = function () {
+        var filter = this.mediaState.recent.filter;
+        return [
+            '<div class="timeline-toolbar">',
+            '  <button class="filter-chip focusable" type="button" data-action="openDateJump">Jump to date</button>',
+            filter ? '  <button class="filter-chip focusable" type="button" data-action="clearRecentFilter">Clear filter</button>' : '',
+            '</div>'
+        ].join('');
+    };
+
+    App.prototype.renderDateJump = function () {
+        var currentYear = new Date().getFullYear();
+        var years = [];
+        var months = monthOptions();
+        var selectedYear = this.dateJumpYear || currentYear;
+        var index;
+
+        for (index = 0; index < 30; index += 1) {
+            years.push(currentYear - index);
+        }
+
+        this.root.innerHTML = this.shell('recent', [
+            '<main class="date-jump-canvas">',
+            this.pageHeader('Jump to date', 'Pick a year and month to load that part of your Immich timeline directly.'),
+            '  <section class="jump-section">',
+            '    <h2>Year</h2>',
+            '    <div class="jump-grid year-grid">',
+            years.map(function (year) {
+                return '<button class="jump-chip focusable' + (year === selectedYear ? ' active' : '') + '" type="button" data-action="selectJumpYear" data-year="' + year + '">' + year + '</button>';
+            }).join(''),
+            '    </div>',
+            '  </section>',
+            '  <section class="jump-section">',
+            '    <h2>' + selectedYear + '</h2>',
+            '    <div class="jump-grid month-grid">',
+            months.map(function (month) {
+                return '<button class="jump-chip focusable" type="button" data-action="jumpToMonth" data-year="' + selectedYear + '" data-month="' + month.value + '">' + month.label + '</button>';
+            }).join(''),
+            '    </div>',
+            '  </section>',
+            '  <button class="text-action focusable" type="button" data-action="recent">Back to Recents</button>',
+            '</main>'
+        ].join(''));
+    };
+
+    App.prototype.renderGridStatus = function (routeName, title, subtitle, message, actionLabel, action) {
+        this.root.innerHTML = this.shell(routeName, [
+            '<main class="content-canvas">',
+            this.pageHeader(title, subtitle),
+            '  <section class="grid-status">',
+            '    <p>' + escapeHtml(message) + '</p>',
+            action ? '    <button class="primary-action compact-action focusable" type="button" data-action="' + action + '">' + escapeHtml(actionLabel || 'Retry') + '</button>' : '',
+            '  </section>',
+            '</main>'
+        ].join(''));
+    };
+
     App.prototype.renderAlbums = function () {
         this.root.innerHTML = this.shell('albums', [
             '<main class="content-canvas">',
@@ -254,7 +384,7 @@
                 var active = item.action === activeRoute ? ' active' : '';
                 return [
                     '<button class="rail-button focusable' + active + '" type="button" data-action="' + item.action + '">',
-                    '  <span class="rail-icon">' + item.icon + '</span>',
+                    '  <span class="rail-icon">' + navIcon(item.icon) + '</span>',
                     '  <span class="rail-label">' + item.label + '</span>',
                     '</button>'
                 ].join('');
@@ -267,11 +397,18 @@
     App.prototype.topBar = function () {
         var connected = namespace.Settings.hasConnection(this.settings);
         var initial = (this.settings.userName || this.settings.userEmail || 'P').charAt(0).toUpperCase();
+        var connectionTitle = connected ? 'Connected to Immich' : 'Immich offline';
+        var version = this.settings.serverVersion || 'Sync pending';
         return [
             '<header class="top-bar">',
-            '  <div class="top-status ' + (connected ? 'connected' : '') + '">Cloud ' + (connected ? 'Connected' : 'Offline') + '</div>',
-            '  <div class="top-status">' + escapeHtml(this.settings.serverVersion || 'Sync pending') + '</div>',
-            '  <div class="avatar">' + escapeHtml(initial) + '</div>',
+            '  <div class="status-cluster">',
+            '    <span class="connection-indicator ' + (connected ? 'connected' : 'offline') + '" title="' + escapeAttr(connectionTitle) + '" aria-label="' + escapeAttr(connectionTitle) + '">',
+            '      <span class="connection-dot"></span>',
+            '      <span class="connection-cloud" aria-hidden="true"></span>',
+            '    </span>',
+            '    <span class="version-pill" title="Immich server version">' + escapeHtml(version) + '</span>',
+            '  </div>',
+            '  <div class="avatar" title="' + escapeAttr(this.settings.userEmail || this.settings.userName || 'Pensieve') + '">' + escapeHtml(initial) + '</div>',
             '</header>'
         ].join('');
     };
@@ -287,13 +424,206 @@
 
     App.prototype.mediaTile = function (item) {
         var badge = item.type === 'video' ? '<span class="media-badge">VID</span>' : '';
+        var assetId = item.id ? ' data-asset-id="' + escapeAttr(item.id) + '"' : '';
+        var thumbnail = item.thumbnailUrl ? '<img class="media-thumb" src="' + escapeAttr(item.thumbnailUrl) + '" alt="" />' : '<span class="media-pending"><span class="pending-ring" aria-hidden="true"></span><span>Preparing</span></span>';
+        var aspectStyle = item.aspectRatio ? ' style="--asset-ratio: ' + escapeAttr(item.aspectRatio) + ';"' : '';
         return [
-            '<button class="media-card focusable tone-' + item.tone + '" type="button" data-action="mediaPlaceholder">',
-            '  <span class="media-art"></span>',
+            '<button class="media-card focusable tone-' + (item.tone || 'forest') + ' ' + (item.ratioClass || 'ratio-square') + '" type="button" data-action="mediaPlaceholder"' + assetId + aspectStyle + '>',
+            '  <span class="media-art">' + thumbnail + '</span>',
             badge,
-            '  <span class="media-caption">' + escapeHtml(item.title) + '</span>',
             '</button>'
         ].join('');
+    };
+
+    App.prototype.loadRecentMedia = function (options) {
+        var self = this;
+        var state = this.mediaState.recent;
+        var loadOptions = options || {};
+        var page = loadOptions.page || state.page || 1;
+        var append = Boolean(loadOptions.append);
+
+        if (state.loading) {
+            return;
+        }
+
+        if (state.filter && state.filter.timeBucket && !append) {
+            this.loadRecentBucket(state.filter);
+            return;
+        }
+
+        state.loading = true;
+        state.error = null;
+        state.loadingMore = append;
+
+        this.createClient().searchAssets({
+            page: page,
+            size: 60,
+            order: 'desc',
+            visibility: 'timeline',
+            withExif: true
+        }).then(function (response) {
+            var assets = extractSearchItems(response).filter(isSupportedAsset);
+            var media = assets.map(mapAssetToMedia);
+            state.items = append ? mergeMediaItems(state.items, media) : media;
+            state.loaded = true;
+            state.loading = false;
+            state.loadingMore = false;
+            state.page = page;
+            state.nextPage = getSearchNextPage(response);
+            state.hasMore = Boolean(state.nextPage);
+            self.renderRoute({ name: 'recent' });
+        }).catch(function (error) {
+            console.warn('Recent media load failed', error);
+            state.error = error;
+            state.loading = false;
+            state.loadingMore = false;
+            state.loaded = append ? state.loaded : false;
+            self.renderRoute({ name: 'recent' });
+            self.showToast(formatMediaError(error));
+        });
+    };
+
+    App.prototype.loadRecentBucket = function (filter) {
+        var self = this;
+        var state = this.mediaState.recent;
+
+        state.loading = true;
+        state.error = null;
+
+        this.createClient().getTimelineBucket(filter.timeBucket).then(function (response) {
+            state.items = mapTimelineBucketToMedia(response, filter.timeBucket);
+            state.loaded = true;
+            state.loading = false;
+            state.loadingMore = false;
+            state.page = 1;
+            state.nextPage = null;
+            state.hasMore = false;
+            self.renderRoute({ name: 'recent' });
+        }).catch(function (error) {
+            console.warn('Recent timeline bucket load failed', error);
+            state.error = error;
+            state.loading = false;
+            state.loaded = false;
+            self.renderRoute({ name: 'recent' });
+            self.showToast(formatMediaError(error));
+        });
+    };
+
+    App.prototype.loadMoreRecentIfNeeded = function () {
+        var state = this.mediaState.recent;
+        var focused = this.focusables[this.focusIndex];
+        var timeline = this.root.querySelector('.timeline-canvas');
+        var assetId = focused ? focused.getAttribute('data-asset-id') : null;
+        var remainingItems = state.items.length - this.focusIndex;
+        var nearBottom = timeline ? timeline.scrollTop + timeline.clientHeight > timeline.scrollHeight - (timeline.clientHeight * 0.9) : false;
+        var nextPage = normalizeNextPage(state.nextPage, state.page);
+
+        if (!state.loaded || state.loading || !state.hasMore || !nextPage) {
+            return;
+        }
+
+        if (remainingItems > 18 && !nearBottom) {
+            return;
+        }
+
+        this.pendingFocusAssetId = assetId;
+        this.pendingScrollTop = timeline ? timeline.scrollTop : null;
+        this.loadRecentMedia({
+            page: nextPage,
+            append: true
+        });
+    };
+
+    App.prototype.bindScrollLoading = function () {
+        var self = this;
+        var timeline = this.root.querySelector('.timeline-canvas');
+
+        if (!timeline) {
+            return;
+        }
+
+        timeline.addEventListener('scroll', function () {
+            self.queueVisibleThumbnailLoad();
+            self.loadMoreRecentIfNeeded();
+        });
+    };
+
+    App.prototype.queueVisibleThumbnailLoad = function () {
+        var self = this;
+
+        if (!this.root.querySelector('.timeline-grid')) {
+            return;
+        }
+
+        if (this.thumbnailTimer) {
+            global.clearTimeout(this.thumbnailTimer);
+        }
+
+        this.thumbnailTimer = global.setTimeout(function () {
+            self.thumbnailTimer = null;
+            self.loadVisibleThumbnails(self.mediaState.recent.items);
+        }, 80);
+    };
+
+    App.prototype.loadVisibleThumbnails = function (items) {
+        var self = this;
+        var client = this.createClient();
+        var viewportHeight = global.innerHeight || document.documentElement.clientHeight || 720;
+        var preloadBefore = viewportHeight * 0.75;
+        var preloadAfter = viewportHeight * 1.5;
+        var now = Date.now();
+
+        Array.prototype.slice.call(this.root.querySelectorAll('[data-asset-id]')).forEach(function (tile) {
+            var assetId = tile.getAttribute('data-asset-id');
+            var media = findById(items, assetId);
+            var rect = tile.getBoundingClientRect();
+
+            if (!media) {
+                return;
+            }
+
+            if (rect.bottom < -preloadBefore || rect.top > viewportHeight + preloadAfter) {
+                return;
+            }
+
+            if (self.thumbnailUrls[assetId]) {
+                media.thumbnailUrl = self.thumbnailUrls[assetId];
+                self.applyThumbnailToTile(assetId, self.thumbnailUrls[assetId]);
+                return;
+            }
+
+            if (self.thumbnailLoads[assetId] === 'loading') {
+                return;
+            }
+
+            if (self.thumbnailErrors[assetId] && now - self.thumbnailErrors[assetId] < 10000) {
+                return;
+            }
+
+            self.thumbnailLoads[assetId] = 'loading';
+            client.getAssetThumbnailBlob(assetId, { size: 'thumbnail' }).then(function (blob) {
+                var objectUrl = global.URL.createObjectURL(blob);
+                self.thumbnailUrls[assetId] = objectUrl;
+                self.thumbnailLoads[assetId] = 'loaded';
+                delete self.thumbnailErrors[assetId];
+                media.thumbnailUrl = objectUrl;
+                self.applyThumbnailToTile(assetId, objectUrl);
+            }).catch(function (error) {
+                delete self.thumbnailLoads[assetId];
+                self.thumbnailErrors[assetId] = Date.now();
+                console.warn('Thumbnail load failed', assetId, error);
+            });
+        });
+    };
+
+    App.prototype.applyThumbnailToTile = function (assetId, objectUrl) {
+        var tile = this.root.querySelector('[data-asset-id="' + cssEscape(assetId) + '"] .media-art');
+
+        if (!tile || tile.querySelector('img')) {
+            return;
+        }
+
+        tile.innerHTML = '<img class="media-thumb" src="' + escapeAttr(objectUrl) + '" alt="" />';
     };
 
     App.prototype.albumTile = function (item) {
@@ -326,9 +656,23 @@
         this.focusIndex = this.findInitialFocusIndex();
         this.applyFocus();
         this.bindPointerActivation();
+        this.bindScrollLoading();
     };
 
     App.prototype.findInitialFocusIndex = function () {
+        var pendingAssetId = this.pendingFocusAssetId;
+
+        if (pendingAssetId) {
+            var pendingIndex = this.focusables.findIndex(function (element) {
+                return element.getAttribute('data-asset-id') === pendingAssetId;
+            });
+
+            this.pendingFocusAssetId = null;
+            if (pendingIndex >= 0) {
+                return pendingIndex;
+            }
+        }
+
         var index = this.focusables.findIndex(function (element) {
             return !element.classList.contains('rail-button');
         });
@@ -364,6 +708,17 @@
 
         this.focusIndex = Math.max(0, Math.min(this.focusIndex, this.focusables.length - 1));
         this.focusables[this.focusIndex].focus();
+
+        if (this.pendingScrollTop !== null) {
+            var timeline = this.root.querySelector('.timeline-canvas');
+            if (timeline) {
+                timeline.scrollTop = this.pendingScrollTop;
+            }
+            this.pendingScrollTop = null;
+        }
+
+        this.queueVisibleThumbnailLoad();
+        this.loadMoreRecentIfNeeded();
     };
 
     App.prototype.moveFocus = function (direction) {
@@ -450,6 +805,10 @@
             return 1;
         }
 
+        if (current.closest('.timeline-grid')) {
+            return 6;
+        }
+
         if (current.closest('.media-grid')) {
             return 3;
         }
@@ -460,6 +819,10 @@
 
         if (current.closest('.filter-row')) {
             return 4;
+        }
+
+        if (current.closest('.jump-grid')) {
+            return 6;
         }
 
         return 1;
@@ -518,6 +881,24 @@
             this.settings = namespace.Settings.clear();
             this.showToast('Saved connection cleared.');
             this.router.reset('setup');
+        } else if (action === 'retryRecent') {
+            this.mediaState.recent = createMediaState();
+            this.renderRecent();
+            this.captureFocusables();
+        } else if (action === 'openDateJump') {
+            this.router.navigate('dateJump');
+        } else if (action === 'selectJumpYear') {
+            this.dateJumpYear = Number(element.getAttribute('data-year')) || this.dateJumpYear;
+            this.renderDateJump();
+            this.captureFocusables();
+        } else if (action === 'jumpToMonth') {
+            this.applyRecentMonthFilter(
+                Number(element.getAttribute('data-year')),
+                Number(element.getAttribute('data-month'))
+            );
+        } else if (action === 'clearRecentFilter') {
+            this.mediaState.recent = createMediaState();
+            this.router.reset('recent');
         } else if (action === 'serverConnection') {
             this.showToast('Connection editing will be added after media browsing.');
         } else if (action === 'accountDetails') {
@@ -527,6 +908,21 @@
         } else {
             this.showToast('This section will connect to Immich in a later slice.');
         }
+    };
+
+    App.prototype.applyRecentMonthFilter = function (year, month) {
+        if (!year || !month) {
+            this.showToast('Choose a year and month.');
+            return;
+        }
+
+        this.dateJumpYear = year;
+        this.mediaState.recent = createMediaState();
+        this.mediaState.recent.filter = {
+            label: monthName(month) + ' ' + year,
+            timeBucket: createMonthBucket(year, month)
+        };
+        this.router.reset('recent');
     };
 
     App.prototype.saveSetup = function () {
@@ -675,6 +1071,18 @@
         return escapeHtml(value).replace(/`/g, '&#96;');
     }
 
+    function navIcon(name) {
+        var icons = {
+            photos: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="15" rx="2"></rect><circle cx="8.5" cy="10" r="1.6"></circle><path d="M4 18l5.2-5.2 3.6 3.6 2.5-2.5L20 18"></path></svg>',
+            albums: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="14" rx="2"></rect><path d="M8 3h8"></path><path d="M8 9h8"></path><path d="M8 13h5"></path></svg>',
+            heart: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.4 5.6a5.1 5.1 0 0 0-7.2 0L12 6.8l-1.2-1.2a5.1 5.1 0 0 0-7.2 7.2L12 21l8.4-8.2a5.1 5.1 0 0 0 0-7.2z"></path></svg>',
+            video: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="13" height="12" rx="2"></rect><path d="M16 10l5-3v10l-5-3z"></path></svg>',
+            settings: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a8.1 8.1 0 0 0 .1-1.1 8.1 8.1 0 0 0-.1-1.1l2-1.5-2-3.4-2.4 1a7.9 7.9 0 0 0-1.9-1.1L14.8 5H9.2l-.4 2.8A7.9 7.9 0 0 0 7 8.9l-2.5-1-2 3.4 2.1 1.5a8.1 8.1 0 0 0-.1 1.1 8.1 8.1 0 0 0 .1 1.1l-2.1 1.5 2 3.4 2.5-1a7.9 7.9 0 0 0 1.8 1.1l.4 2.8h5.6l.4-2.8a7.9 7.9 0 0 0 1.9-1.1l2.4 1 2-3.4z"></path></svg>'
+        };
+
+        return icons[name] || '';
+    }
+
     function formatServerVersion(version) {
         if (!version) {
             return '';
@@ -717,6 +1125,324 @@
         }
 
         return error.message || 'Unable to sign in to Immich.';
+    }
+
+    function createMediaState() {
+        return {
+            items: [],
+            loaded: false,
+            loading: false,
+            loadingMore: false,
+            error: null,
+            page: 1,
+            nextPage: null,
+            hasMore: false,
+            filter: null
+        };
+    }
+
+    function getSearchNextPage(response) {
+        if (response && response.assets && response.assets.nextPage !== undefined) {
+            return response.assets.nextPage;
+        }
+
+        if (response && response.nextPage !== undefined) {
+            return response.nextPage;
+        }
+
+        return null;
+    }
+
+    function normalizeNextPage(nextPage, currentPage) {
+        if (nextPage === null || nextPage === undefined || nextPage === false || nextPage === '') {
+            return null;
+        }
+
+        if (nextPage === true) {
+            return currentPage + 1;
+        }
+
+        var parsed = Number(nextPage);
+        if (!isNaN(parsed) && parsed > currentPage) {
+            return parsed;
+        }
+
+        return null;
+    }
+
+    function mergeMediaItems(existingItems, nextItems) {
+        var seen = {};
+        var merged = [];
+
+        existingItems.concat(nextItems).forEach(function (item) {
+            if (!item || !item.id || seen[item.id]) {
+                return;
+            }
+
+            seen[item.id] = true;
+            merged.push(item);
+        });
+
+        return merged;
+    }
+
+    function extractSearchItems(response) {
+        if (!response) {
+            return [];
+        }
+
+        if (response.assets && Array.isArray(response.assets.items)) {
+            return response.assets.items;
+        }
+
+        if (Array.isArray(response.items)) {
+            return response.items;
+        }
+
+        return [];
+    }
+
+    function isSupportedAsset(asset) {
+        return asset && (asset.type === 'IMAGE' || asset.type === 'VIDEO');
+    }
+
+    function mapAssetToMedia(asset) {
+        return {
+            id: asset.id,
+            title: asset.originalFileName || asset.fileName || formatAssetDate(asset.localDateTime || asset.fileCreatedAt) || 'Untitled',
+            type: asset.type === 'VIDEO' ? 'video' : 'image',
+            tone: toneFromId(asset.id),
+            date: asset.localDateTime || asset.fileCreatedAt || '',
+            dateKey: formatDateKey(asset.localDateTime || asset.fileCreatedAt),
+            dateLabel: formatTimelineDate(asset.localDateTime || asset.fileCreatedAt),
+            aspectRatio: getAssetAspectRatio(asset),
+            ratioClass: getRatioClass(asset),
+            duration: asset.duration || '',
+            isFavorite: Boolean(asset.isFavorite)
+        };
+    }
+
+    function mapTimelineBucketToMedia(bucket, timeBucket) {
+        if (!bucket || !Array.isArray(bucket.id)) {
+            return [];
+        }
+
+        return bucket.id.map(function (id, index) {
+            var fileCreatedAt = bucket.fileCreatedAt && bucket.fileCreatedAt[index] ? bucket.fileCreatedAt[index] : timeBucket;
+            var isImage = bucket.isImage ? bucket.isImage[index] !== false : true;
+            var ratio = bucket.ratio && bucket.ratio[index] ? bucket.ratio[index] : null;
+
+            return {
+                id: id,
+                title: formatAssetDate(fileCreatedAt) || 'Untitled',
+                type: isImage ? 'image' : 'video',
+                tone: toneFromId(id),
+                date: fileCreatedAt,
+                dateKey: formatDateKey(fileCreatedAt),
+                dateLabel: formatTimelineDate(fileCreatedAt),
+                aspectRatio: getBucketAspectRatio(ratio, isImage),
+                ratioClass: getRatioClass({ ratio: ratio, type: isImage ? 'IMAGE' : 'VIDEO' }),
+                duration: bucket.duration && bucket.duration[index] ? bucket.duration[index] : '',
+                isFavorite: bucket.isFavorite ? Boolean(bucket.isFavorite[index]) : false
+            };
+        });
+    }
+
+    function monthOptions() {
+        return [
+            { value: 1, label: 'Jan' },
+            { value: 2, label: 'Feb' },
+            { value: 3, label: 'Mar' },
+            { value: 4, label: 'Apr' },
+            { value: 5, label: 'May' },
+            { value: 6, label: 'Jun' },
+            { value: 7, label: 'Jul' },
+            { value: 8, label: 'Aug' },
+            { value: 9, label: 'Sep' },
+            { value: 10, label: 'Oct' },
+            { value: 11, label: 'Nov' },
+            { value: 12, label: 'Dec' }
+        ];
+    }
+
+    function monthName(month) {
+        var monthOption = monthOptions().filter(function (option) {
+            return option.value === month;
+        })[0];
+
+        return monthOption ? monthOption.label : 'Month';
+    }
+
+    function createMonthBucket(year, month) {
+        return year + '-' + padDatePart(month) + '-01T00:00:00.000Z';
+    }
+
+    function groupMediaByDate(items) {
+        var groupsByKey = {};
+        var groups = [];
+
+        items.forEach(function (item) {
+            var key = item.dateKey || 'unknown';
+
+            if (!groupsByKey[key]) {
+                groupsByKey[key] = {
+                    key: key,
+                    label: item.dateLabel || 'Unknown date',
+                    items: []
+                };
+                groups.push(groupsByKey[key]);
+            }
+
+            groupsByKey[key].items.push(item);
+        });
+
+        return groups;
+    }
+
+    function formatDateKey(value) {
+        var date = parseAssetDate(value);
+        if (!date) {
+            return 'unknown';
+        }
+
+        return date.getFullYear() + '-' + padDatePart(date.getMonth() + 1) + '-' + padDatePart(date.getDate());
+    }
+
+    function formatTimelineDate(value) {
+        var date = parseAssetDate(value);
+        var now = new Date();
+        var options = {
+            weekday: 'short',
+            day: 'numeric',
+            month: 'short'
+        };
+
+        if (!date) {
+            return 'Unknown date';
+        }
+
+        if (date.getFullYear() !== now.getFullYear()) {
+            options.year = 'numeric';
+        }
+
+        return date.toLocaleDateString(undefined, options);
+    }
+
+    function parseAssetDate(value) {
+        if (!value) {
+            return null;
+        }
+
+        var date = new Date(value);
+        if (isNaN(date.getTime())) {
+            return null;
+        }
+
+        return date;
+    }
+
+    function padDatePart(value) {
+        return value < 10 ? '0' + value : String(value);
+    }
+
+    function getAssetAspectRatio(asset) {
+        if (asset.ratio) {
+            return String(Math.max(0.56, Math.min(2.2, Number(asset.ratio))).toFixed(4));
+        }
+
+        var width = Number(asset.width || asset.exifInfo && asset.exifInfo.exifImageWidth || 0);
+        var height = Number(asset.height || asset.exifInfo && asset.exifInfo.exifImageHeight || 0);
+
+        if (!width || !height) {
+            return asset.type === 'VIDEO' ? '1.7778' : '1';
+        }
+
+        return String(Math.max(0.56, Math.min(2.2, width / height)).toFixed(4));
+    }
+
+    function getBucketAspectRatio(ratio, isImage) {
+        if (ratio) {
+            return String(Math.max(0.56, Math.min(2.2, Number(ratio))).toFixed(4));
+        }
+
+        return isImage ? '1' : '1.7778';
+    }
+
+    function getRatioClass(asset) {
+        var ratio = Number(getAssetAspectRatio(asset));
+
+        if (ratio >= 1.65) {
+            return 'ratio-wide';
+        }
+
+        if (ratio <= 0.72) {
+            return 'ratio-tall';
+        }
+
+        if (ratio < 0.9) {
+            return 'ratio-portrait';
+        }
+
+        return 'ratio-square';
+    }
+
+    function formatAssetDate(value) {
+        if (!value) {
+            return '';
+        }
+
+        var date = new Date(value);
+        if (isNaN(date.getTime())) {
+            return '';
+        }
+
+        return date.toLocaleDateString();
+    }
+
+    function toneFromId(value) {
+        var tones = ['sunset', 'forest', 'mountain', 'architecture', 'lake', 'valley', 'autumn', 'redwood'];
+        var text = String(value || '');
+        var total = 0;
+
+        for (var index = 0; index < text.length; index += 1) {
+            total += text.charCodeAt(index);
+        }
+
+        return tones[total % tones.length];
+    }
+
+    function findById(items, assetId) {
+        for (var index = 0; index < items.length; index += 1) {
+            if (items[index].id === assetId) {
+                return items[index];
+            }
+        }
+
+        return null;
+    }
+
+    function cssEscape(value) {
+        return String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    }
+
+    function formatMediaError(error) {
+        if (!error) {
+            return 'Unable to load media from Immich.';
+        }
+
+        if (error.code === 'NETWORK_UNAVAILABLE') {
+            return 'Unable to reach Immich while loading media.';
+        }
+
+        if (error.code === 'AUTH_INVALID') {
+            return 'Your Immich session expired. Sign in again.';
+        }
+
+        if (error.code === 'PERMISSION_DENIED') {
+            return 'This Immich account cannot read media.';
+        }
+
+        return error.message || 'Unable to load media from Immich.';
     }
 
     namespace.App = App;
