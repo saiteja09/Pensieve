@@ -29,6 +29,12 @@ trust_anchor: []
 files:
   - css/style.css
   - icon.png
+  - images/nav/albums.svg
+  - images/nav/favorites.svg
+  - images/nav/library.svg
+  - images/nav/settings.svg
+  - images/nav/videos.svg
+  - images/thumbnail-unavailable.svg
   - images/tizen_32.png
   - index.html
   - js/api/immich-client.js

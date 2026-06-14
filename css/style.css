@@ -147,14 +147,20 @@ button {
     height: 30px;
 }
 
-.rail-icon svg {
+.rail-icon img {
+    display: block;
     width: 30px;
     height: 30px;
-    fill: none;
-    stroke: currentColor;
-    stroke-width: 2.2;
-    stroke-linecap: round;
-    stroke-linejoin: round;
+    object-fit: contain;
+    filter: invert(82%) sepia(8%) saturate(342%) hue-rotate(184deg) brightness(98%);
+}
+
+.rail-button.active .rail-icon img {
+    filter: brightness(0) saturate(100%) invert(16%) sepia(49%) saturate(1738%) hue-rotate(177deg) brightness(88%) contrast(94%);
+}
+
+.rail-button:focus .rail-icon img {
+    filter: brightness(0) saturate(100%) invert(16%) sepia(49%) saturate(1738%) hue-rotate(177deg) brightness(88%) contrast(94%);
 }
 
 .rail-label {
@@ -389,7 +395,7 @@ button {
     display: flex;
     flex-wrap: wrap;
     align-items: flex-start;
-    gap: 6px;
+    gap: 8px;
     max-width: none;
 }
 
@@ -416,27 +422,11 @@ button {
 }
 
 .timeline-grid .media-card {
-    width: 220px;
+    width: 178px;
     min-height: 0;
-    aspect-ratio: var(--asset-ratio, 1);
+    aspect-ratio: 1;
     border-width: 2px;
     border-radius: 6px;
-}
-
-.timeline-grid .ratio-wide {
-    width: 330px;
-}
-
-.timeline-grid .ratio-square {
-    width: 214px;
-}
-
-.timeline-grid .ratio-portrait {
-    width: 172px;
-}
-
-.timeline-grid .ratio-tall {
-    width: 148px;
 }
 
 .media-art,
@@ -462,36 +452,26 @@ button {
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 10px;
+    gap: 9px;
     color: rgba(226, 226, 226, 0.72);
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 800;
     letter-spacing: 0.4px;
+    text-align: center;
 }
 
-.pending-ring {
-    width: 28px;
-    height: 28px;
-    border: 3px solid rgba(226, 226, 226, 0.18);
-    border-top-color: rgba(160, 201, 255, 0.78);
+.thumbnail-unavailable-icon {
+    width: 34px;
+    height: 34px;
+    opacity: 0.8;
+}
+
+.thumbnail-loading-dot {
+    width: 16px;
+    height: 16px;
     border-radius: 999px;
-    animation: pending-spin 1s linear infinite;
-}
-
-.timeline-grid .ratio-tall .media-pending,
-.timeline-grid .ratio-portrait .media-pending {
-    font-size: 11px;
-}
-
-.timeline-grid .ratio-tall .pending-ring {
-    width: 22px;
-    height: 22px;
-}
-
-@keyframes pending-spin {
-    to {
-        transform: rotate(360deg);
-    }
+    background: rgba(160, 201, 255, 0.75);
+    box-shadow: 0 0 0 6px rgba(160, 201, 255, 0.12);
 }
 
 .grid-status {

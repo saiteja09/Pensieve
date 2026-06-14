@@ -2,11 +2,11 @@
     var namespace = global.Pensieve = global.Pensieve || {};
 
     var navItems = [
-        { action: 'recent', label: 'Photos', icon: 'photos' },
-        { action: 'albums', label: 'Albums', icon: 'albums' },
-        { action: 'favorites', label: 'Favorites', icon: 'heart' },
-        { action: 'videos', label: 'Videos', icon: 'video' },
-        { action: 'settings', label: 'Settings', icon: 'settings' }
+        { action: 'recent', label: 'Library', icon: 'images/nav/library.svg' },
+        { action: 'albums', label: 'Albums', icon: 'images/nav/albums.svg' },
+        { action: 'favorites', label: 'Favorites', icon: 'images/nav/favorites.svg' },
+        { action: 'videos', label: 'Videos', icon: 'images/nav/videos.svg' },
+        { action: 'settings', label: 'Settings', icon: 'images/nav/settings.svg' }
     ];
 
     var sampleMedia = [
@@ -199,13 +199,13 @@
             '  <section class="date-section">',
             '    <div class="section-heading"><h2>Today</h2><span>Latest from Immich</span></div>',
             '    <div class="media-grid">',
-            media.slice(0, 4).map(this.mediaTile).join(''),
+            media.slice(0, 4).map(this.mediaTile, this).join(''),
             '    </div>',
             '  </section>',
             '  <section class="date-section">',
             '    <div class="section-heading"><h2>Yesterday</h2><span>Recently added</span></div>',
             '    <div class="media-grid">',
-            media.slice(4).map(this.mediaTile).join(''),
+            media.slice(4).map(this.mediaTile, this).join(''),
             '    </div>',
             '  </section>',
             '</main>'
@@ -220,22 +220,22 @@
         }
 
         if (state.loading && !state.items.length) {
-            this.renderGridStatus('recent', 'Recents', 'Exploring your latest memories from all connected devices.', 'Loading your latest Immich memories...');
+            this.renderGridStatus('recent', 'Library', 'Exploring your latest memories from all connected devices.', 'Loading your latest Immich memories...');
             return;
         }
 
         if (state.error && !state.items.length) {
-            this.renderGridStatus('recent', 'Recents', 'Exploring your latest memories from all connected devices.', 'Unable to load recent media.', 'Retry', 'retryRecent');
+            this.renderGridStatus('recent', 'Library', 'Exploring your latest memories from all connected devices.', 'Unable to load recent media.', 'Retry', 'retryRecent');
             return;
         }
 
         if (state.loaded && !state.items.length) {
             if (state.filter) {
-                this.renderGridStatus('recent', 'Recents', this.recentSubtitle(), 'No photos or videos were found for ' + state.filter.label + '.', 'Clear filter', 'clearRecentFilter');
+                this.renderGridStatus('recent', 'Library', this.recentSubtitle(), 'No photos or videos were found for ' + state.filter.label + '.', 'Clear filter', 'clearRecentFilter');
                 return;
             }
 
-            this.renderGridStatus('recent', 'Recents', 'Exploring your latest memories from all connected devices.', 'No recent photos or videos were found.');
+            this.renderGridStatus('recent', 'Library', 'Exploring your latest memories from all connected devices.', 'No recent photos or videos were found.');
             return;
         }
 
@@ -248,14 +248,14 @@
 
         this.root.innerHTML = this.shell('recent', [
             '<main class="content-canvas timeline-canvas">',
-            this.pageHeader('Recents', this.recentSubtitle()),
+            this.pageHeader('Library', this.recentSubtitle()),
             this.recentToolbar(),
             groups.map(function (group) {
                 return [
                     '  <section class="date-section timeline-section">',
                     '    <div class="section-heading compact-heading"><h2>' + escapeHtml(group.label) + '</h2><span>' + group.items.length + ' item' + (group.items.length === 1 ? '' : 's') + '</span></div>',
                     '    <div class="media-grid timeline-grid">',
-                    group.items.map(this.mediaTile).join(''),
+                    group.items.map(this.mediaTile, this).join(''),
                     '    </div>',
                     '  </section>'
                 ].join('');
@@ -313,7 +313,7 @@
             }).join(''),
             '    </div>',
             '  </section>',
-            '  <button class="text-action focusable" type="button" data-action="recent">Back to Recents</button>',
+            '  <button class="text-action focusable" type="button" data-action="recent">Back to Library</button>',
             '</main>'
         ].join(''));
     };
@@ -384,7 +384,7 @@
                 var active = item.action === activeRoute ? ' active' : '';
                 return [
                     '<button class="rail-button focusable' + active + '" type="button" data-action="' + item.action + '">',
-                    '  <span class="rail-icon">' + navIcon(item.icon) + '</span>',
+                    '  <span class="rail-icon"><img src="' + escapeAttr(item.icon) + '" alt="" aria-hidden="true" /></span>',
                     '  <span class="rail-label">' + item.label + '</span>',
                     '</button>'
                 ].join('');
@@ -425,14 +425,22 @@
     App.prototype.mediaTile = function (item) {
         var badge = item.type === 'video' ? '<span class="media-badge">VID</span>' : '';
         var assetId = item.id ? ' data-asset-id="' + escapeAttr(item.id) + '"' : '';
-        var thumbnail = item.thumbnailUrl ? '<img class="media-thumb" src="' + escapeAttr(item.thumbnailUrl) + '" alt="" />' : '<span class="media-pending"><span class="pending-ring" aria-hidden="true"></span><span>Preparing</span></span>';
-        var aspectStyle = item.aspectRatio ? ' style="--asset-ratio: ' + escapeAttr(item.aspectRatio) + ';"' : '';
+        var hasRecentError = item.id && this.thumbnailErrors[item.id] && Date.now() - this.thumbnailErrors[item.id] < 10000;
+        var thumbnail = item.thumbnailUrl ? '<img class="media-thumb" src="' + escapeAttr(item.thumbnailUrl) + '" alt="" />' : this.thumbnailPlaceholder(hasRecentError);
         return [
-            '<button class="media-card focusable tone-' + (item.tone || 'forest') + ' ' + (item.ratioClass || 'ratio-square') + '" type="button" data-action="mediaPlaceholder"' + assetId + aspectStyle + '>',
+            '<button class="media-card focusable tone-' + (item.tone || 'forest') + ' ' + (item.ratioClass || 'ratio-square') + '" type="button" data-action="mediaPlaceholder"' + assetId + '>',
             '  <span class="media-art">' + thumbnail + '</span>',
             badge,
             '</button>'
         ].join('');
+    };
+
+    App.prototype.thumbnailPlaceholder = function (hasError) {
+        if (hasError) {
+            return '<span class="media-pending thumbnail-error"><img class="thumbnail-unavailable-icon" src="images/thumbnail-unavailable.svg" alt="" /><span>Thumbnail not available</span></span>';
+        }
+
+        return '<span class="media-pending thumbnail-loading"><span class="thumbnail-loading-dot" aria-hidden="true"></span><span>Loading thumbnail</span></span>';
     };
 
     App.prototype.loadRecentMedia = function (options) {
@@ -611,6 +619,7 @@
             }).catch(function (error) {
                 delete self.thumbnailLoads[assetId];
                 self.thumbnailErrors[assetId] = Date.now();
+                self.applyThumbnailErrorToTile(assetId);
                 console.warn('Thumbnail load failed', assetId, error);
             });
         });
@@ -619,11 +628,21 @@
     App.prototype.applyThumbnailToTile = function (assetId, objectUrl) {
         var tile = this.root.querySelector('[data-asset-id="' + cssEscape(assetId) + '"] .media-art');
 
-        if (!tile || tile.querySelector('img')) {
+        if (!tile || tile.querySelector('.media-thumb')) {
             return;
         }
 
         tile.innerHTML = '<img class="media-thumb" src="' + escapeAttr(objectUrl) + '" alt="" />';
+    };
+
+    App.prototype.applyThumbnailErrorToTile = function (assetId) {
+        var tile = this.root.querySelector('[data-asset-id="' + cssEscape(assetId) + '"] .media-art');
+
+        if (!tile || tile.querySelector('.media-thumb')) {
+            return;
+        }
+
+        tile.innerHTML = this.thumbnailPlaceholder(true);
     };
 
     App.prototype.albumTile = function (item) {
@@ -1069,18 +1088,6 @@
 
     function escapeAttr(value) {
         return escapeHtml(value).replace(/`/g, '&#96;');
-    }
-
-    function navIcon(name) {
-        var icons = {
-            photos: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="15" rx="2"></rect><circle cx="8.5" cy="10" r="1.6"></circle><path d="M4 18l5.2-5.2 3.6 3.6 2.5-2.5L20 18"></path></svg>',
-            albums: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="14" rx="2"></rect><path d="M8 3h8"></path><path d="M8 9h8"></path><path d="M8 13h5"></path></svg>',
-            heart: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.4 5.6a5.1 5.1 0 0 0-7.2 0L12 6.8l-1.2-1.2a5.1 5.1 0 0 0-7.2 7.2L12 21l8.4-8.2a5.1 5.1 0 0 0 0-7.2z"></path></svg>',
-            video: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="13" height="12" rx="2"></rect><path d="M16 10l5-3v10l-5-3z"></path></svg>',
-            settings: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a8.1 8.1 0 0 0 .1-1.1 8.1 8.1 0 0 0-.1-1.1l2-1.5-2-3.4-2.4 1a7.9 7.9 0 0 0-1.9-1.1L14.8 5H9.2l-.4 2.8A7.9 7.9 0 0 0 7 8.9l-2.5-1-2 3.4 2.1 1.5a8.1 8.1 0 0 0-.1 1.1 8.1 8.1 0 0 0 .1 1.1l-2.1 1.5 2 3.4 2.5-1a7.9 7.9 0 0 0 1.8 1.1l.4 2.8h5.6l.4-2.8a7.9 7.9 0 0 0 1.9-1.1l2.4 1 2-3.4z"></path></svg>'
-        };
-
-        return icons[name] || '';
     }
 
     function formatServerVersion(version) {
