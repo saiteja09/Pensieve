@@ -11,6 +11,11 @@
     var formatViewerTitle = helpers.formatViewerTitle;
     var currentViewerAction = helpers.currentViewerAction;
 
+    App.prototype.currentViewerItem = function () {
+        var assetId = this.router.current && this.router.current.params ? this.router.current.params.assetId : '';
+        return findById(this.viewerItems(), assetId);
+    };
+
     App.prototype.renderViewer = function (route) {
         var assetId = route && route.params ? route.params.assetId : '';
         var items = this.viewerItems();
@@ -21,12 +26,17 @@
             this.root.innerHTML = [
                 '<section class="viewer-screen">',
                 '  <div class="viewer-status">',
-                '    <strong>Photo unavailable</strong>',
+                '    <strong>Media unavailable</strong>',
                 '    <button class="primary-action compact-action focusable" type="button" data-action="viewerClose">Back to Library</button>',
                 '  </div>',
                 '  <div id="toast" class="toast"></div>',
                 '</section>'
             ].join('');
+            return;
+        }
+
+        if (item.type === 'video') {
+            this.renderVideoViewer(item, items, index);
             return;
         }
 
@@ -58,17 +68,137 @@
         this.preloadViewerNeighbors(items, index);
     };
 
+    App.prototype.renderVideoViewer = function (item) {
+        var videoUrl = this.viewerVideoUrls[item.id] || '';
+        var posterUrl = this.thumbnailUrls[item.id] || '';
+        var isLoading = this.viewerVideoLoads[item.id] === 'loading';
+        var hasError = this.viewerVideoErrors[item.id];
+        var overlayClass = this.viewerOverlayVisible ? ' visible' : '';
+
+        this.root.innerHTML = [
+            '<section class="viewer-screen video-viewer-screen">',
+            videoUrl && !hasError ? '  <video id="viewerVideo" class="viewer-video" src="' + escapeAttr(videoUrl) + '"' + (posterUrl ? ' poster="' + escapeAttr(posterUrl) + '"' : '') + ' autoplay controls playsinline preload="auto"></video>' : '',
+            !videoUrl && isLoading ? '  <div class="viewer-status"><span class="viewer-loading-dot"></span><strong>Loading video</strong></div>' : '',
+            hasError ? '  <div class="viewer-status"><strong>Unable to play this video.</strong><p class="viewer-status-copy">This file may use a codec unsupported by this TV.</p><button class="primary-action compact-action focusable" type="button" data-action="viewerRetry">Retry</button></div>' : '',
+            !videoUrl && !isLoading && !hasError ? '  <div class="viewer-status"><span class="viewer-loading-dot"></span><strong>Preparing video</strong></div>' : '',
+            '  <div class="viewer-overlay video-viewer-overlay' + overlayClass + '">',
+            '    <div class="viewer-topbar">',
+            '      <button class="viewer-action viewer-back focusable" type="button" data-action="viewerClose" aria-label="Back"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6"></path></svg></button>',
+            '    </div>',
+            '  </div>',
+            '  <div id="toast" class="toast"></div>',
+            '</section>'
+        ].join('');
+
+        this.loadViewerVideo(item.id);
+        this.bindViewerVideo(item.id);
+    };
+
+    App.prototype.loadViewerVideo = function (assetId) {
+        var self = this;
+
+        if (!assetId || this.viewerVideoUrls[assetId] || this.viewerVideoLoads[assetId] === 'loading' || this.viewerVideoErrors[assetId]) {
+            return;
+        }
+
+        this.viewerVideoLoads[assetId] = 'loading';
+        this.createClient().getAssetVideoPlaybackBlob(assetId).then(function (blob) {
+            var objectUrl = global.URL.createObjectURL(blob);
+            self.viewerVideoUrls[assetId] = objectUrl;
+            self.viewerVideoLoads[assetId] = 'loaded';
+            delete self.viewerVideoErrors[assetId];
+
+            if (self.router.current && self.router.current.name === 'viewer' && self.router.current.params.assetId === assetId) {
+                self.pendingViewerAction = currentViewerAction(self) || self.pendingViewerAction;
+                self.renderViewer(self.router.current);
+                self.captureFocusables();
+            }
+        }).catch(function (error) {
+            delete self.viewerVideoLoads[assetId];
+            self.viewerVideoErrors[assetId] = error;
+
+            if (self.router.current && self.router.current.name === 'viewer' && self.router.current.params.assetId === assetId) {
+                self.pendingViewerAction = currentViewerAction(self) || self.pendingViewerAction;
+                self.renderViewer(self.router.current);
+                self.captureFocusables();
+            }
+        });
+    };
+
+    App.prototype.bindViewerVideo = function (assetId) {
+        var self = this;
+        var video = document.getElementById('viewerVideo');
+
+        if (!video) {
+            return;
+        }
+
+        video.addEventListener('loadeddata', function () {
+            self.scheduleViewerOverlayAutoHide(video);
+        });
+        video.addEventListener('play', function () {
+            self.scheduleViewerOverlayAutoHide(video);
+        });
+        video.addEventListener('pause', function () {
+            self.setViewerOverlayVisible(true);
+        });
+        video.addEventListener('ended', function () {
+            self.setViewerOverlayVisible(true);
+        });
+        video.addEventListener('error', function () {
+            self.viewerVideoErrors[assetId] = new Error('Video playback failed.');
+            if (self.router.current && self.router.current.name === 'viewer' && self.router.current.params.assetId === assetId) {
+                self.renderViewer(self.router.current);
+                self.captureFocusables();
+            }
+        });
+
+        video.play().then(function () {
+            self.scheduleViewerOverlayAutoHide(video);
+        }).catch(function () {
+            self.setViewerOverlayVisible(true);
+            self.showToast('Press Play/Pause to start video.');
+        });
+    };
+
+    App.prototype.toggleViewerVideoPlayback = function () {
+        var video = document.getElementById('viewerVideo');
+
+        if (!video) {
+            return false;
+        }
+
+        if (video.paused || video.ended) {
+            var self = this;
+            video.play().then(function () {
+                self.scheduleViewerOverlayAutoHide(video);
+            }).catch(function () {});
+        } else {
+            video.pause();
+        }
+
+        this.setViewerOverlayVisible(true);
+        return true;
+    };
+
+    App.prototype.seekViewerVideo = function (seconds) {
+        var video = document.getElementById('viewerVideo');
+
+        if (!video || !isFinite(video.duration)) {
+            return false;
+        }
+
+        video.currentTime = Math.max(0, Math.min(video.duration, video.currentTime + seconds));
+        this.setViewerOverlayVisible(true);
+        return true;
+    };
+
     App.prototype.openMediaViewer = function (element) {
         var assetId = element.getAttribute('data-asset-id');
         var item = findById(this.mediaState.recent.items, assetId);
 
         if (!item) {
             this.showToast('This item is not available yet.');
-            return;
-        }
-
-        if (item.type === 'video') {
-            this.showToast('Video playback is coming next.');
             return;
         }
 
@@ -85,7 +215,7 @@
 
     App.prototype.viewerItems = function () {
         return this.mediaState.recent.items.filter(function (item) {
-            return item.type === 'image';
+            return item.type === 'image' || item.type === 'video';
         });
     };
 
@@ -100,7 +230,7 @@
 
         var nextIndex = index + direction;
         if (nextIndex < 0) {
-            this.showToast('This is the first photo.');
+            this.showToast('This is the first item.');
             return;
         } else if (nextIndex >= items.length) {
             this.loadNextViewerPage();
@@ -118,34 +248,34 @@
         var nextPage = normalizeNextPage(state.nextPage, state.page);
 
         if (state.loading) {
-            this.showToast('Loading more photos...');
+            this.showToast('Loading more media...');
             return;
         }
 
         if (!state.hasMore || !nextPage || state.filter) {
-            this.showToast('No more photos loaded.');
+            this.showToast('No more media loaded.');
             return;
         }
 
         this.pendingViewerAction = 'viewerNext';
-        this.showToast('Loading more photos...');
+        this.showToast('Loading more media...');
         this.loadRecentMedia({
             page: nextPage,
             append: true,
             silent: true,
             onLoaded: function (media) {
-                var nextImage = media.find(function (item) {
-                    return item.type === 'image';
+                var nextItem = media.find(function (item) {
+                    return item.type === 'image' || item.type === 'video';
                 });
 
-                if (!nextImage) {
-                    self.showToast('No more photos found on the next page.');
+                if (!nextItem) {
+                    self.showToast('No more media found on the next page.');
                     return;
                 }
 
-                self.pendingFocusAssetId = nextImage.id;
+                self.pendingFocusAssetId = nextItem.id;
                 self.pendingViewerAction = 'viewerNext';
-                self.router.navigate('viewer', { assetId: nextImage.id }, { replace: true });
+                self.router.navigate('viewer', { assetId: nextItem.id }, { replace: true });
             },
             onError: function () {
                 self.pendingViewerAction = null;
@@ -154,13 +284,50 @@
     };
 
     App.prototype.toggleViewerOverlay = function () {
-        this.viewerOverlayVisible = !this.viewerOverlayVisible;
-        this.renderViewer(this.router.current);
-        this.captureFocusables();
+        this.setViewerOverlayVisible(!this.viewerOverlayVisible);
+    };
+
+    App.prototype.setViewerOverlayVisible = function (visible) {
+        var overlay = this.root.querySelector('.viewer-overlay');
+        var video = document.getElementById('viewerVideo');
+        this.viewerOverlayVisible = visible;
+
+        if (this.viewerOverlayTimer) {
+            global.clearTimeout(this.viewerOverlayTimer);
+            this.viewerOverlayTimer = null;
+        }
+
+        if (overlay) {
+            overlay.classList.toggle('visible', visible);
+        }
+
+        if (visible && video && !video.paused && !video.ended) {
+            this.scheduleViewerOverlayAutoHide(video);
+        }
+    };
+
+    App.prototype.scheduleViewerOverlayAutoHide = function (video) {
+        var self = this;
+        var activeVideo = video || document.getElementById('viewerVideo');
+
+        if (!activeVideo || activeVideo.paused || activeVideo.ended) {
+            return;
+        }
+
+        if (this.viewerOverlayTimer) {
+            global.clearTimeout(this.viewerOverlayTimer);
+        }
+
+        this.viewerOverlayTimer = global.setTimeout(function () {
+            self.viewerOverlayTimer = null;
+            self.setViewerOverlayVisible(false);
+        }, 2200);
     };
 
     App.prototype.retryViewerImage = function () {
         var assetId = this.router.current && this.router.current.params ? this.router.current.params.assetId : '';
+        delete this.viewerVideoErrors[assetId];
+        delete this.viewerVideoLoads[assetId];
         delete this.viewerImageErrors[viewerCacheKey(assetId, 'preview')];
         delete this.viewerImageErrors[viewerCacheKey(assetId, 'fullsize')];
         delete this.viewerImageWarnings[assetId];
@@ -240,11 +407,11 @@
         var previous = items[index === 0 ? items.length - 1 : index - 1];
         var next = items[index === items.length - 1 ? 0 : index + 1];
 
-        if (previous) {
+        if (previous && previous.type === 'image') {
             this.loadViewerImageSize(previous.id, 'preview', false);
         }
 
-        if (next && next.id !== previous.id) {
+        if (next && next.type === 'image' && next.id !== previous.id) {
             this.loadViewerImageSize(next.id, 'preview', false);
         }
     };

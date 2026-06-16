@@ -44,7 +44,11 @@
         this.viewerImageLoads = {};
         this.viewerImageErrors = {};
         this.viewerImageWarnings = {};
+        this.viewerVideoUrls = {};
+        this.viewerVideoLoads = {};
+        this.viewerVideoErrors = {};
         this.viewerOverlayVisible = true;
+        this.viewerOverlayTimer = null;
         this.pendingViewerAction = null;
         this.pendingFocusAssetId = null;
         this.pendingScrollTop = null;
@@ -760,6 +764,8 @@
             this.closeViewer();
         } else if (action === 'viewerRetry') {
             this.retryViewerImage();
+        } else if (action === 'viewerPlayPause') {
+            this.toggleViewerVideoPlayback();
         } else if (action === 'serverConnection') {
             this.showToast('Connection editing will be added after media browsing.');
         } else if (action === 'accountDetails') {

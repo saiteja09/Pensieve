@@ -213,19 +213,41 @@
 
     App.prototype.handleRemoteKey = function (event) {
         if (this.router.current && this.router.current.name === 'viewer') {
+            var viewerItem = this.currentViewerItem ? this.currentViewerItem() : null;
+            var isVideo = viewerItem && viewerItem.type === 'video';
+
             if (event.key === 'left') {
+                if (isVideo) {
+                    this.seekViewerVideo(-10);
+                    return;
+                }
+
                 this.navigateViewer(-1);
                 return;
             }
 
             if (event.key === 'right') {
+                if (isVideo) {
+                    this.seekViewerVideo(10);
+                    return;
+                }
+
                 this.navigateViewer(1);
                 return;
             }
 
             if (event.key === 'enter') {
+                if (isVideo && this.toggleViewerVideoPlayback()) {
+                    return;
+                }
+
                 var focusedViewerAction = this.focusables[this.focusIndex] ? this.focusables[this.focusIndex].getAttribute('data-action') : '';
-                if (focusedViewerAction === 'viewerRetry') {
+                if (!this.viewerOverlayVisible && focusedViewerAction !== 'viewerRetry') {
+                    this.setViewerOverlayVisible(true);
+                    return;
+                }
+
+                if (focusedViewerAction === 'viewerRetry' || focusedViewerAction === 'viewerClose') {
                     this.activate(this.focusables[this.focusIndex]);
                     return;
                 }
@@ -234,8 +256,19 @@
                 return;
             }
 
+            if (event.key === 'playPause' || event.key === 'play' || event.key === 'pause') {
+                if (isVideo && this.toggleViewerVideoPlayback()) {
+                    return;
+                }
+            }
+
             if (event.key === 'back') {
                 this.closeViewer();
+                return;
+            }
+
+            if ((event.key === 'up' || event.key === 'down') && !this.viewerOverlayVisible) {
+                this.setViewerOverlayVisible(true);
                 return;
             }
         }

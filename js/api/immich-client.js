@@ -82,11 +82,17 @@
         return this.requestBlob('/assets/' + encodeURIComponent(assetId) + '/thumbnail?size=' + encodeURIComponent(size));
     };
 
+    ImmichClient.prototype.getAssetVideoPlaybackBlob = function (assetId) {
+        return this.requestBlob('/assets/' + encodeURIComponent(assetId) + '/video/playback', {
+            timeoutMs: 120000
+        });
+    };
+
     ImmichClient.prototype.request = function (path, options) {
         var requestOptions = options || {};
         var fetchOptions = this.createFetchOptions(requestOptions);
 
-        return fetchWithTimeout(this.url(path), fetchOptions, this.timeoutMs).then(function (response) {
+        return fetchWithTimeout(this.url(path), fetchOptions, requestOptions.timeoutMs || this.timeoutMs).then(function (response) {
             return parseResponse(response).then(function (payload) {
                 if (!response.ok) {
                     throw createHttpError(response, payload);
@@ -104,9 +110,10 @@
     };
 
     ImmichClient.prototype.requestBlob = function (path, options) {
-        var fetchOptions = this.createFetchOptions(options || {});
+        var requestOptions = options || {};
+        var fetchOptions = this.createFetchOptions(requestOptions);
 
-        return fetchWithTimeout(this.url(path), fetchOptions, this.timeoutMs).then(function (response) {
+        return fetchWithTimeout(this.url(path), fetchOptions, requestOptions.timeoutMs || this.timeoutMs).then(function (response) {
             if (!response.ok) {
                 return parseResponse(response).then(function (payload) {
                     throw createHttpError(response, payload);
