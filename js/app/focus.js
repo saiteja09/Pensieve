@@ -13,6 +13,7 @@
     App.prototype.findInitialFocusIndex = function () {
         var pendingAssetId = this.pendingFocusAssetId;
         var pendingViewerAction = this.pendingViewerAction;
+        var pendingAccentId = this.pendingAccentId;
 
         if (pendingViewerAction) {
             var pendingActionIndex = this.focusables.findIndex(function (element) {
@@ -36,11 +37,30 @@
             }
         }
 
+        if (pendingAccentId) {
+            var pendingAccentIndex = this.focusables.findIndex(function (element) {
+                return element.getAttribute('data-accent-id') === pendingAccentId;
+            });
+
+            this.pendingAccentId = null;
+            if (pendingAccentIndex >= 0) {
+                return pendingAccentIndex;
+            }
+        }
+
         var index = this.focusables.findIndex(function (element) {
             return !element.classList.contains('rail-button');
         });
 
-        return index >= 0 ? index : 0;
+        if (index >= 0) {
+            return index;
+        }
+
+        var activeRailIndex = this.focusables.findIndex(function (element) {
+            return element.classList.contains('rail-button') && element.classList.contains('active');
+        });
+
+        return activeRailIndex >= 0 ? activeRailIndex : 0;
     };
 
     App.prototype.bindPointerActivation = function () {

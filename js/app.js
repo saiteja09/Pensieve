@@ -1,6 +1,7 @@
 (function (global) {
     var namespace = global.Pensieve = global.Pensieve || {};
     var navItems = namespace.AppConfig.navItems;
+    var accentPalettes = namespace.AppConfig.accentPalettes;
     var helpers = namespace.AppHelpers;
     var escapeHtml = helpers.escapeHtml;
     var escapeAttr = helpers.escapeAttr;
@@ -51,6 +52,7 @@
     }
 
     App.prototype.start = function () {
+        this.applyAppearance();
         namespace.Remote.registerTizenKeys();
         this.remote = namespace.Remote.createRemoteController(this.handleRemoteKey.bind(this));
 
@@ -325,10 +327,66 @@
             this.settingsItem('Account', account, 'USR', 'accountDetails'),
             this.settingsItem('Slideshow', 'Interval: 10 seconds - Videos skipped by default.', 'PLY', 'comingSoon'),
             this.settingsItem('Display', 'Photo mode: Fit to screen.', 'PIC', 'comingSoon'),
+            this.appearanceSettings(),
             this.settingsItem('Clear saved settings', 'Remove local server and session details.', 'CLR', 'clearSettings'),
             '  </div>',
             '</main>'
         ].join(''));
+    };
+
+    App.prototype.getAccentPalette = function (accentId) {
+        var selectedId = accentId || this.settings.appearanceAccentId || namespace.Settings.defaults.appearanceAccentId;
+        return accentPalettes.find(function (palette) {
+            return palette.id === selectedId;
+        }) || accentPalettes[0];
+    };
+
+    App.prototype.applyAppearance = function () {
+        var palette = this.getAccentPalette();
+        var rootStyle = document.documentElement.style;
+
+        rootStyle.setProperty('--primary', palette.primary);
+        rootStyle.setProperty('--primary-strong', palette.strong);
+        rootStyle.setProperty('--on-primary', palette.onPrimary);
+        rootStyle.setProperty('--primary-glow', palette.glow);
+    };
+
+    App.prototype.appearanceSettings = function () {
+        var selectedId = this.getAccentPalette().id;
+
+        return [
+            '<section class="settings-section appearance-settings">',
+            '  <div class="settings-section-header">',
+            '    <h2>Appearance</h2>',
+            '    <p>Choose a high-contrast primary accent color.</p>',
+            '  </div>',
+            '  <div class="palette-grid">',
+            accentPalettes.map(function (palette) {
+                var selected = palette.id === selectedId ? ' selected' : '';
+                var ariaLabel = palette.label + (selected ? ', selected' : '');
+                return [
+                    '<button class="palette-option focusable' + selected + '" type="button" data-action="selectAccent" data-accent-id="' + escapeAttr(palette.id) + '" style="--swatch-color: ' + escapeAttr(palette.primary) + '; --swatch-strong: ' + escapeAttr(palette.strong) + ';" aria-label="' + escapeAttr(ariaLabel) + '">',
+                    '  <span class="palette-swatch" aria-hidden="true"></span>',
+                    '  <span class="palette-label">' + escapeHtml(palette.label) + '</span>',
+                    '</button>'
+                ].join('');
+            }).join(''),
+            '  </div>',
+            '</section>'
+        ].join('');
+    };
+
+    App.prototype.selectAccent = function (accentId) {
+        var palette = this.getAccentPalette(accentId);
+
+        this.settings = namespace.Settings.write(Object.assign({}, this.settings, {
+            appearanceAccentId: palette.id
+        }));
+        this.applyAppearance();
+        this.pendingAccentId = palette.id;
+        this.renderSettings();
+        this.captureFocusables();
+        this.showToast(palette.label + ' accent selected.');
     };
 
     App.prototype.shell = function (activeRoute, content) {
@@ -349,9 +407,10 @@
             '  <nav class="rail-items">',
             navItems.map(function (item) {
                 var active = item.action === activeRoute ? ' active' : '';
+                var iconUrl = escapeAttr(item.icon);
                 return [
                     '<button class="rail-button focusable' + active + '" type="button" data-action="' + item.action + '">',
-                    '  <span class="rail-icon"><img src="' + escapeAttr(item.icon) + '" alt="" aria-hidden="true" /></span>',
+                    '  <span class="rail-icon" style="-webkit-mask-image: url(\'' + iconUrl + '\'); mask-image: url(\'' + iconUrl + '\');" aria-hidden="true"></span>',
                     '  <span class="rail-label">' + item.label + '</span>',
                     '</button>'
                 ].join('');
@@ -668,8 +727,11 @@
             this.saveSetup();
         } else if (action === 'clearSettings') {
             this.settings = namespace.Settings.clear();
+            this.applyAppearance();
             this.showToast('Saved connection cleared.');
             this.router.reset('setup');
+        } else if (action === 'selectAccent') {
+            this.selectAccent(element.getAttribute('data-accent-id'));
         } else if (action === 'retryRecent') {
             this.mediaState.recent = createMediaState();
             this.renderRecent();
@@ -782,7 +844,7 @@
                 });
             });
         }).then(function (result) {
-            self.settings = namespace.Settings.write({
+            self.settings = namespace.Settings.write(Object.assign({}, self.settings, {
                 serverUrl: namespace.normalizeServerUrl(serverUrl),
                 authMode: 'password',
                 accessToken: result.loginResponse.accessToken,
@@ -791,7 +853,7 @@
                 userName: result.user.name || result.loginResponse.name || '',
                 userEmail: result.user.email || result.loginResponse.userEmail || email,
                 serverVersion: formatServerVersion(result.version)
-            });
+            }));
 
             if (passwordInput) {
                 passwordInput.value = '';

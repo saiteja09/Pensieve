@@ -11,6 +11,7 @@
         userName: '',
         userEmail: '',
         serverVersion: '',
+        appearanceAccentId: 'mint',
         slideshowIntervalSeconds: 10,
         slideshowShuffle: false,
         photoDisplayMode: 'fit'
