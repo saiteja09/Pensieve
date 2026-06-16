@@ -66,7 +66,6 @@
             items: [],
             loaded: false,
             loading: false,
-            loadingMore: false,
             error: null,
             page: 1,
             nextPage: null,
@@ -369,10 +368,6 @@
         return assetId + ':' + size;
     }
 
-    function formatViewerTitle(item) {
-        return item.dateLabel || formatAssetDate(item.date) || 'Photo';
-    }
-
     function currentViewerAction(app) {
         var current = app.focusables[app.focusIndex];
         var action = current ? current.getAttribute('data-action') : '';
@@ -423,7 +418,6 @@
         findById: findById,
         findIndexById: findIndexById,
         viewerCacheKey: viewerCacheKey,
-        formatViewerTitle: formatViewerTitle,
         currentViewerAction: currentViewerAction,
         cssEscape: cssEscape,
         formatMediaError: formatMediaError

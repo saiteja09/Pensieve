@@ -32,10 +32,19 @@
         this.toastTimer = null;
         this.remote = null;
         this.isBusy = false;
-        this.sessionStatus = 'checking';
         this.mediaState = {
-            recent: createMediaState()
+            recent: createMediaState(),
+            videos: createMediaState()
         };
+        this.albumState = {
+            items: [],
+            loaded: false,
+            loading: false,
+            error: null
+        };
+        this.albumDetails = {};
+        this.currentAlbumId = '';
+        this.viewerAlbumId = '';
         this.thumbnailUrls = {};
         this.thumbnailLoads = {};
         this.thumbnailErrors = {};
@@ -43,12 +52,12 @@
         this.viewerImageUrls = {};
         this.viewerImageLoads = {};
         this.viewerImageErrors = {};
-        this.viewerImageWarnings = {};
         this.viewerVideoUrls = {};
         this.viewerVideoLoads = {};
         this.viewerVideoErrors = {};
         this.viewerOverlayVisible = true;
         this.viewerOverlayTimer = null;
+        this.viewerSource = 'recent';
         this.pendingViewerAction = null;
         this.pendingFocusAssetId = null;
         this.pendingScrollTop = null;
@@ -73,7 +82,6 @@
         var self = this;
 
         if (!namespace.Settings.hasConnection(this.settings)) {
-            this.sessionStatus = 'signedOut';
             this.router.reset('setup');
             return;
         }
@@ -98,12 +106,10 @@
                 userName: user.name || '',
                 userEmail: user.email || ''
             }));
-            self.sessionStatus = 'signedIn';
             self.router.reset('recent');
         }).catch(function (error) {
             console.warn('Stored session validation failed', error);
             self.settings = namespace.Settings.clear();
-            self.sessionStatus = 'signedOut';
             self.router.reset('setup');
             self.showToast(error.message || 'Please sign in again.');
         });
@@ -132,13 +138,17 @@
         } else if (route.name === 'settings') {
             this.renderSettings();
         } else if (route.name === 'dateJump') {
-            this.renderDateJump();
+            this.renderDateJump('recent');
+        } else if (route.name === 'videoDateJump') {
+            this.renderDateJump('videos');
         } else if (route.name === 'albums') {
             this.renderAlbums();
+        } else if (route.name === 'album') {
+            this.renderAlbum(route);
         } else if (route.name === 'favorites') {
             this.renderGridStatus('favorites', 'Favorites', '', 'Favorites will connect to Immich in the next library slice.');
         } else if (route.name === 'videos') {
-            this.renderGridStatus('videos', 'Videos', '', 'Video browsing will connect to Immich in the next library slice.');
+            this.renderVideos();
         } else {
             this.renderRecent();
         }
@@ -216,7 +226,7 @@
 
         if (state.loaded && !state.items.length) {
             if (state.filter) {
-                this.renderGridStatus('recent', 'Library', this.recentSubtitle(), 'No photos or videos were found for ' + state.filter.label + '.', 'Clear filter', 'clearRecentFilter');
+                this.renderGridStatus('recent', 'Library', this.mediaSubtitle('recent'), 'No photos or videos were found for ' + state.filter.label + '.', 'Clear filter', 'clearRecentFilter');
                 return;
             }
 
@@ -228,13 +238,48 @@
         this.loadVisibleThumbnails(state.items);
     };
 
+    App.prototype.renderVideos = function () {
+        var state = this.mediaState.videos;
+
+        if (!state.loaded && !state.loading && !state.error) {
+            this.loadVideosMedia();
+        }
+
+        if (state.loading && !state.items.length) {
+            this.renderGridStatus('videos', 'Videos', '', 'Loading your latest videos...');
+            return;
+        }
+
+        if (state.error && !state.items.length) {
+            this.renderGridStatus('videos', 'Videos', '', 'Unable to load videos.', 'Retry', 'retryVideos');
+            return;
+        }
+
+        if (state.loaded && !state.items.length) {
+            if (state.filter) {
+                this.renderGridStatus('videos', 'Videos', this.mediaSubtitle('videos'), 'No videos were found for ' + state.filter.label + '.', 'Clear filter', 'clearVideosFilter');
+                return;
+            }
+
+            this.renderGridStatus('videos', 'Videos', '', 'No videos were found.');
+            return;
+        }
+
+        this.renderMediaTimeline('videos', 'Videos', this.mediaSubtitle('videos'), this.mediaToolbar('videos'), state.items);
+        this.loadVisibleThumbnails(state.items);
+    };
+
     App.prototype.renderRecentTimeline = function (items) {
+        this.renderMediaTimeline('recent', 'Library', this.mediaSubtitle('recent'), this.mediaToolbar('recent'), items);
+    };
+
+    App.prototype.renderMediaTimeline = function (routeName, title, subtitle, toolbar, items) {
         var groups = groupMediaByDate(items);
 
-        this.root.innerHTML = this.shell('recent', [
+        this.root.innerHTML = this.shell(routeName, [
             '<main class="content-canvas timeline-canvas">',
-            this.pageHeader('Library', this.recentSubtitle()),
-            this.recentToolbar(),
+            this.pageHeader(title, subtitle),
+            toolbar,
             groups.map(function (group) {
                 return [
                     '  <section class="date-section timeline-section">',
@@ -249,26 +294,33 @@
         ].join(''));
     };
 
-    App.prototype.recentSubtitle = function () {
-        var filter = this.mediaState.recent.filter;
+    App.prototype.mediaSubtitle = function (source) {
+        var filter = this.mediaState[source].filter;
         if (filter) {
-            return 'Showing memories from ' + filter.label + '. Clear the filter to return to latest memories.';
+            return 'Showing ' + (source === 'videos' ? 'videos' : 'memories') + ' from ' + filter.label + '. Clear the filter to return to latest ' + (source === 'videos' ? 'videos' : 'memories') + '.';
         }
 
         return '';
     };
 
-    App.prototype.recentToolbar = function () {
-        var filter = this.mediaState.recent.filter;
+    App.prototype.mediaToolbar = function (source) {
+        var filter = this.mediaState[source].filter;
+        var jumpAction = source === 'videos' ? 'openVideosDateJump' : 'openDateJump';
+        var clearAction = source === 'videos' ? 'clearVideosFilter' : 'clearRecentFilter';
         return [
             '<div class="timeline-toolbar">',
-            '  <button class="filter-chip focusable" type="button" data-action="openDateJump">Jump to date</button>',
-            filter ? '  <button class="filter-chip focusable" type="button" data-action="clearRecentFilter">Clear filter</button>' : '',
+            '  <button class="filter-chip focusable" type="button" data-action="' + jumpAction + '">Jump to date</button>',
+            filter ? '  <button class="filter-chip focusable" type="button" data-action="' + clearAction + '">Clear filter</button>' : '',
             '</div>'
         ].join('');
     };
 
-    App.prototype.renderDateJump = function () {
+    App.prototype.renderDateJump = function (source) {
+        var stateKey = source === 'videos' ? 'videos' : 'recent';
+        var activeRoute = stateKey === 'videos' ? 'videos' : 'recent';
+        var backAction = stateKey === 'videos' ? 'videos' : 'recent';
+        var title = stateKey === 'videos' ? 'Jump to videos' : 'Jump to date';
+        var subtitle = stateKey === 'videos' ? 'Pick a year and month to load videos from that part of your Immich timeline.' : 'Pick a year and month to load that part of your Immich timeline directly.';
         var currentYear = new Date().getFullYear();
         var years = [];
         var months = monthOptions();
@@ -279,14 +331,14 @@
             years.push(currentYear - index);
         }
 
-        this.root.innerHTML = this.shell('recent', [
+        this.root.innerHTML = this.shell(activeRoute, [
             '<main class="date-jump-canvas">',
-            this.pageHeader('Jump to date', 'Pick a year and month to load that part of your Immich timeline directly.'),
+            this.pageHeader(title, subtitle),
             '  <section class="jump-section">',
             '    <h2>Year</h2>',
             '    <div class="jump-grid year-grid">',
             years.map(function (year) {
-                return '<button class="jump-chip focusable' + (year === selectedYear ? ' active' : '') + '" type="button" data-action="selectJumpYear" data-year="' + year + '">' + year + '</button>';
+                return '<button class="jump-chip focusable' + (year === selectedYear ? ' active' : '') + '" type="button" data-action="selectJumpYear" data-source="' + stateKey + '" data-year="' + year + '">' + year + '</button>';
             }).join(''),
             '    </div>',
             '  </section>',
@@ -294,11 +346,11 @@
             '    <h2>' + selectedYear + '</h2>',
             '    <div class="jump-grid month-grid">',
             months.map(function (month) {
-                return '<button class="jump-chip focusable" type="button" data-action="jumpToMonth" data-year="' + selectedYear + '" data-month="' + month.value + '">' + month.label + '</button>';
+                return '<button class="jump-chip focusable" type="button" data-action="jumpToMonth" data-source="' + stateKey + '" data-year="' + selectedYear + '" data-month="' + month.value + '">' + month.label + '</button>';
             }).join(''),
             '    </div>',
             '  </section>',
-            '  <button class="primary-action compact-action focusable" type="button" data-action="recent">Back to Library</button>',
+            '  <button class="primary-action compact-action focusable" type="button" data-action="' + backAction + '">Back to ' + (stateKey === 'videos' ? 'Videos' : 'Library') + '</button>',
             '</main>'
         ].join(''));
     };
@@ -316,7 +368,294 @@
     };
 
     App.prototype.renderAlbums = function () {
-        this.renderGridStatus('albums', 'Albums', '', 'Albums will connect to Immich in the next library slice.');
+        var state = this.albumState;
+
+        if (!state.loaded && !state.loading && !state.error) {
+            this.loadAlbums();
+        }
+
+        if (state.loading && !state.items.length) {
+            this.renderGridStatus('albums', 'Albums', '', 'Loading your Immich albums...');
+            return;
+        }
+
+        if (state.error && !state.items.length) {
+            this.renderGridStatus('albums', 'Albums', '', 'Unable to load albums.', 'Retry', 'retryAlbums');
+            return;
+        }
+
+        if (state.loaded && !state.items.length) {
+            this.renderGridStatus('albums', 'Albums', '', 'No albums were found.');
+            return;
+        }
+
+        this.root.innerHTML = this.shell('albums', [
+            '<main class="content-canvas albums-canvas">',
+            this.pageHeader('Albums', ''),
+            '  <div class="album-grid">',
+            state.items.map(this.albumTile, this).join(''),
+            '  </div>',
+            '</main>'
+        ].join(''));
+
+        this.loadVisibleAlbumThumbnails(state.items);
+    };
+
+    App.prototype.renderAlbum = function (route) {
+        var albumId = route && route.params ? route.params.albumId : '';
+        var detail = this.getAlbumDetail(albumId);
+        var title = detail.album ? detail.album.name : 'Album';
+        var subtitle;
+
+        this.currentAlbumId = albumId;
+
+        if (!albumId) {
+            this.renderGridStatus('albums', 'Albums', '', 'This album is not available.', 'Back to Albums', 'albums');
+            return;
+        }
+
+        if (!detail.loaded && !detail.loading && !detail.error) {
+            this.loadAlbum(albumId);
+        }
+
+        if (detail.loading && !detail.items.length) {
+            this.renderGridStatus('albums', title, '', 'Loading album media...');
+            return;
+        }
+
+        if (detail.error && !detail.items.length) {
+            this.renderGridStatus('albums', title, '', 'Unable to load this album.', 'Retry', 'retryAlbum');
+            return;
+        }
+
+        subtitle = this.albumSubtitle(detail.album, detail.items.length);
+
+        if (detail.loaded && !detail.items.length) {
+            this.renderGridStatus('albums', title, subtitle, 'No photos or videos were found in this album.', 'Back to Albums', 'albums');
+            return;
+        }
+
+        this.renderMediaTimeline('albums', title, subtitle, this.albumToolbar(), detail.items);
+        this.loadVisibleThumbnails(detail.items);
+    };
+
+    App.prototype.albumTile = function (album) {
+        var coverId = album.coverId ? ' data-album-cover-id="' + escapeAttr(album.coverId) + '"' : '';
+        var thumbnail = album.thumbnailUrl ? '<img class="media-thumb" src="' + escapeAttr(album.thumbnailUrl) + '" alt="" />' : this.thumbnailPlaceholder(!album.coverId || Boolean(album.coverError));
+        var badge = album.shared ? '<span class="album-badge">Shared</span>' : '';
+        var countText = album.count + ' item' + (album.count === 1 ? '' : 's');
+
+        return [
+            '<button class="album-card focusable" type="button" data-action="openAlbum" data-album-id="' + escapeAttr(album.id) + '"' + coverId + '>',
+            '  <span class="album-art">' + thumbnail + '</span>',
+            badge,
+            '  <span class="album-info">',
+            '    <strong>' + escapeHtml(album.name) + '</strong>',
+            '    <small>' + escapeHtml(countText) + '</small>',
+            '  </span>',
+            '</button>'
+        ].join('');
+    };
+
+    App.prototype.albumToolbar = function () {
+        return [
+            '<div class="timeline-toolbar">',
+            '  <button class="filter-chip focusable" type="button" data-action="albums">Back to Albums</button>',
+            '</div>'
+        ].join('');
+    };
+
+    App.prototype.albumSubtitle = function (album, itemCount) {
+        var count = album && album.count ? album.count : itemCount;
+        var parts = [count + ' item' + (count === 1 ? '' : 's')];
+
+        if (album && album.shared) {
+            parts.push('Shared album');
+        }
+
+        return parts.join(' - ');
+    };
+
+    App.prototype.getAlbumDetail = function (albumId) {
+        if (!this.albumDetails[albumId]) {
+            this.albumDetails[albumId] = {
+                album: this.findAlbum(albumId),
+                items: [],
+                loaded: false,
+                loading: false,
+                error: null
+            };
+        }
+
+        return this.albumDetails[albumId];
+    };
+
+    App.prototype.findAlbum = function (albumId) {
+        for (var index = 0; index < this.albumState.items.length; index += 1) {
+            if (this.albumState.items[index].id === albumId) {
+                return this.albumState.items[index];
+            }
+        }
+
+        return null;
+    };
+
+    App.prototype.normalizeAlbum = function (album) {
+        album = album || {};
+        var assets = Array.isArray(album.assets) ? album.assets : [];
+        var firstAsset = assets.length ? assets[0] : null;
+        var coverId = album.albumThumbnailAssetId || firstAsset && firstAsset.id || '';
+
+        return {
+            id: album.id,
+            name: album.albumName || 'Untitled album',
+            coverId: coverId,
+            count: Number(album.assetCount || assets.length || 0),
+            shared: Boolean(album.shared),
+            startDate: album.startDate || '',
+            endDate: album.endDate || '',
+            updatedAt: album.updatedAt || album.modifiedAt || '',
+            thumbnailUrl: coverId && this.thumbnailUrls[coverId] ? this.thumbnailUrls[coverId] : ''
+        };
+    };
+
+    App.prototype.loadAlbums = function () {
+        var self = this;
+        var state = this.albumState;
+
+        if (state.loading) {
+            return;
+        }
+
+        state.loading = true;
+        state.error = null;
+
+        this.createClient().getAlbums().then(function (albums) {
+            var items = Array.isArray(albums) ? albums : albums && Array.isArray(albums.items) ? albums.items : [];
+            state.items = items.filter(function (album) {
+                return album && album.id;
+            }).map(function (album) {
+                return self.normalizeAlbum(album);
+            }).sort(function (left, right) {
+                return new Date(right.updatedAt || right.endDate || right.startDate || 0) - new Date(left.updatedAt || left.endDate || left.startDate || 0);
+            });
+            state.loaded = true;
+            state.loading = false;
+            self.renderRoute({ name: 'albums' });
+        }).catch(function (error) {
+            console.warn('Albums load failed', error);
+            state.error = error;
+            state.loading = false;
+            state.loaded = false;
+            self.renderRoute({ name: 'albums' });
+            self.showToast(formatMediaError(error));
+        });
+    };
+
+    App.prototype.loadAlbum = function (albumId) {
+        var self = this;
+        var detail = this.getAlbumDetail(albumId);
+
+        if (detail.loading) {
+            return;
+        }
+
+        detail.loading = true;
+        detail.error = null;
+
+        this.createClient().getAlbumInfo(albumId).then(function (album) {
+            var normalized = self.normalizeAlbum(album);
+            var assets = Array.isArray(album.assets) ? album.assets : [];
+            detail.album = normalized;
+            detail.items = assets.filter(isSupportedAsset).map(mapAssetToMedia);
+            detail.loaded = true;
+            detail.loading = false;
+            self.albumDetails[albumId] = detail;
+            self.renderRoute({ name: 'album', params: { albumId: albumId } });
+        }).catch(function (error) {
+            console.warn('Album load failed', albumId, error);
+            detail.error = error;
+            detail.loading = false;
+            detail.loaded = false;
+            self.renderRoute({ name: 'album', params: { albumId: albumId } });
+            self.showToast(formatMediaError(error));
+        });
+    };
+
+    App.prototype.loadVisibleAlbumThumbnails = function (albums) {
+        var self = this;
+        var client = this.createClient();
+        var viewportHeight = global.innerHeight || document.documentElement.clientHeight || 720;
+        var preloadBefore = viewportHeight * 0.75;
+        var preloadAfter = viewportHeight * 1.5;
+        var now = Date.now();
+
+        Array.prototype.slice.call(this.root.querySelectorAll('[data-album-cover-id]')).forEach(function (tile) {
+            var albumId = tile.getAttribute('data-album-id');
+            var coverId = tile.getAttribute('data-album-cover-id');
+            var album = self.findAlbum(albumId);
+            var rect = tile.getBoundingClientRect();
+
+            if (!album || !coverId) {
+                return;
+            }
+
+            if (rect.bottom < -preloadBefore || rect.top > viewportHeight + preloadAfter) {
+                return;
+            }
+
+            if (self.thumbnailUrls[coverId]) {
+                album.thumbnailUrl = self.thumbnailUrls[coverId];
+                self.applyAlbumThumbnailToTile(albumId, self.thumbnailUrls[coverId]);
+                return;
+            }
+
+            if (self.thumbnailLoads[coverId] === 'loading') {
+                return;
+            }
+
+            if (self.thumbnailErrors[coverId] && now - self.thumbnailErrors[coverId] < 10000) {
+                album.coverError = true;
+                return;
+            }
+
+            self.thumbnailLoads[coverId] = 'loading';
+            client.getAssetThumbnailBlob(coverId, { size: 'thumbnail' }).then(function (blob) {
+                var objectUrl = global.URL.createObjectURL(blob);
+                self.thumbnailUrls[coverId] = objectUrl;
+                self.thumbnailLoads[coverId] = 'loaded';
+                delete self.thumbnailErrors[coverId];
+                album.thumbnailUrl = objectUrl;
+                album.coverError = false;
+                self.applyAlbumThumbnailToTile(albumId, objectUrl);
+            }).catch(function (error) {
+                delete self.thumbnailLoads[coverId];
+                self.thumbnailErrors[coverId] = Date.now();
+                album.coverError = true;
+                self.applyAlbumThumbnailErrorToTile(albumId);
+                console.warn('Album thumbnail load failed', coverId, error);
+            });
+        });
+    };
+
+    App.prototype.applyAlbumThumbnailToTile = function (albumId, objectUrl) {
+        var tile = this.root.querySelector('[data-album-id="' + cssEscape(albumId) + '"] .album-art');
+
+        if (!tile || tile.querySelector('.media-thumb')) {
+            return;
+        }
+
+        tile.innerHTML = '<img class="media-thumb" src="' + escapeAttr(objectUrl) + '" alt="" />';
+    };
+
+    App.prototype.applyAlbumThumbnailErrorToTile = function (albumId) {
+        var tile = this.root.querySelector('[data-album-id="' + cssEscape(albumId) + '"] .album-art');
+
+        if (!tile || tile.querySelector('.media-thumb')) {
+            return;
+        }
+
+        tile.innerHTML = this.thumbnailPlaceholder(true);
     };
 
     App.prototype.renderSettings = function () {
@@ -329,7 +668,7 @@
             '  <div class="settings-list">',
             this.settingsItem('Server Connection', server + ' - ' + version, 'DNS', 'serverConnection'),
             this.settingsItem('Account', account, 'USR', 'accountDetails'),
-            this.settingsItem('Slideshow', 'Interval: 10 seconds - Videos skipped by default.', 'PLY', 'comingSoon'),
+            this.settingsItem('Slideshow', 'Interval: 10 seconds.', 'PLY', 'comingSoon'),
             this.settingsItem('Display', 'Photo mode: Fit to screen.', 'PIC', 'comingSoon'),
             this.appearanceSettings(),
             this.settingsItem('Clear saved settings', 'Remove local server and session details.', 'CLR', 'clearSettings'),
@@ -492,7 +831,6 @@
 
         state.loading = true;
         state.error = null;
-        state.loadingMore = append;
 
         this.createClient().searchAssets({
             page: page,
@@ -506,7 +844,6 @@
             state.items = append ? mergeMediaItems(state.items, media) : media;
             state.loaded = true;
             state.loading = false;
-            state.loadingMore = false;
             state.page = page;
             state.nextPage = getSearchNextPage(response);
             state.hasMore = Boolean(state.nextPage);
@@ -521,7 +858,6 @@
             console.warn('Recent media load failed', error);
             state.error = error;
             state.loading = false;
-            state.loadingMore = false;
             state.loaded = append ? state.loaded : false;
             if (typeof loadOptions.onError === 'function') {
                 loadOptions.onError(error);
@@ -529,6 +865,67 @@
 
             if (!silent) {
                 self.renderRoute({ name: 'recent' });
+            }
+            self.showToast(formatMediaError(error));
+        });
+    };
+
+    App.prototype.loadVideosMedia = function (options) {
+        var self = this;
+        var state = this.mediaState.videos;
+        var loadOptions = options || {};
+        var page = loadOptions.page || state.page || 1;
+        var append = Boolean(loadOptions.append);
+        var silent = Boolean(loadOptions.silent);
+
+        if (state.loading) {
+            return;
+        }
+
+        if (state.filter && state.filter.timeBucket && !append) {
+            this.loadVideosBucket(state.filter);
+            return;
+        }
+
+        state.loading = true;
+        state.error = null;
+
+        this.createClient().searchAssets({
+            page: page,
+            size: 60,
+            order: 'desc',
+            visibility: 'timeline',
+            type: 'VIDEO',
+            withExif: true
+        }).then(function (response) {
+            var assets = extractSearchItems(response).filter(function (asset) {
+                return asset && asset.type === 'VIDEO';
+            });
+            var media = assets.map(mapAssetToMedia);
+            state.items = append ? mergeMediaItems(state.items, media) : media;
+            state.loaded = true;
+            state.loading = false;
+            state.page = page;
+            state.nextPage = getSearchNextPage(response);
+            state.hasMore = Boolean(state.nextPage);
+            if (typeof loadOptions.onLoaded === 'function') {
+                loadOptions.onLoaded(media, response);
+            }
+
+            if (!silent) {
+                self.renderRoute({ name: 'videos' });
+            }
+        }).catch(function (error) {
+            console.warn('Videos load failed', error);
+            state.error = error;
+            state.loading = false;
+            state.loaded = append ? state.loaded : false;
+            if (typeof loadOptions.onError === 'function') {
+                loadOptions.onError(error);
+            }
+
+            if (!silent) {
+                self.renderRoute({ name: 'videos' });
             }
             self.showToast(formatMediaError(error));
         });
@@ -545,7 +942,6 @@
             state.items = mapTimelineBucketToMedia(response, filter.timeBucket);
             state.loaded = true;
             state.loading = false;
-            state.loadingMore = false;
             state.page = 1;
             state.nextPage = null;
             state.hasMore = false;
@@ -560,8 +956,62 @@
         });
     };
 
-    App.prototype.loadMoreRecentIfNeeded = function () {
-        var state = this.mediaState.recent;
+    App.prototype.loadVideosBucket = function (filter) {
+        var self = this;
+        var state = this.mediaState.videos;
+
+        state.loading = true;
+        state.error = null;
+
+        this.createClient().getTimelineBucket(filter.timeBucket).then(function (response) {
+            state.items = mapTimelineBucketToMedia(response, filter.timeBucket).filter(function (item) {
+                return item.type === 'video';
+            });
+            state.loaded = true;
+            state.loading = false;
+            state.page = 1;
+            state.nextPage = null;
+            state.hasMore = false;
+            self.renderRoute({ name: 'videos' });
+        }).catch(function (error) {
+            console.warn('Videos timeline bucket load failed', error);
+            state.error = error;
+            state.loading = false;
+            state.loaded = false;
+            self.renderRoute({ name: 'videos' });
+            self.showToast(formatMediaError(error));
+        });
+    };
+
+    App.prototype.currentMediaSource = function () {
+        if (this.router.current && this.router.current.name === 'videos') {
+            return 'videos';
+        }
+
+        if (this.router.current && this.router.current.name === 'album') {
+            return 'album';
+        }
+
+        return 'recent';
+    };
+
+    App.prototype.currentMediaItems = function () {
+        var source = this.currentMediaSource();
+
+        if (source === 'album') {
+            return this.getAlbumDetail(this.currentAlbumId).items;
+        }
+
+        return this.mediaState[source].items;
+    };
+
+    App.prototype.loadMoreMediaIfNeeded = function () {
+        var source = this.currentMediaSource();
+        if (source === 'album') {
+            return;
+        }
+
+        var state = this.mediaState[source];
         var focused = this.focusables[this.focusIndex];
         var timeline = this.root.querySelector('.timeline-canvas');
         var assetId = focused ? focused.getAttribute('data-asset-id') : null;
@@ -579,7 +1029,7 @@
 
         this.pendingFocusAssetId = assetId;
         this.pendingScrollTop = timeline ? timeline.scrollTop : null;
-        this.loadRecentMedia({
+        this[source === 'videos' ? 'loadVideosMedia' : 'loadRecentMedia']({
             page: nextPage,
             append: true
         });
@@ -588,15 +1038,24 @@
     App.prototype.bindScrollLoading = function () {
         var self = this;
         var timeline = this.root.querySelector('.timeline-canvas');
+        var albumsCanvas = this.root.querySelector('.albums-canvas');
 
-        if (!timeline) {
+        if (!timeline && !albumsCanvas) {
             return;
         }
 
-        timeline.addEventListener('scroll', function () {
-            self.queueVisibleThumbnailLoad();
-            self.loadMoreRecentIfNeeded();
-        });
+        if (timeline) {
+            timeline.addEventListener('scroll', function () {
+                self.queueVisibleThumbnailLoad();
+                self.loadMoreMediaIfNeeded();
+            });
+        }
+
+        if (albumsCanvas) {
+            albumsCanvas.addEventListener('scroll', function () {
+                self.loadVisibleAlbumThumbnails(self.albumState.items);
+            });
+        }
     };
 
     App.prototype.queueVisibleThumbnailLoad = function () {
@@ -612,7 +1071,7 @@
 
         this.thumbnailTimer = global.setTimeout(function () {
             self.thumbnailTimer = null;
-            self.loadVisibleThumbnails(self.mediaState.recent.items);
+            self.loadVisibleThumbnails(self.currentMediaItems());
         }, 80);
     };
 
@@ -740,20 +1199,48 @@
             this.mediaState.recent = createMediaState();
             this.renderRecent();
             this.captureFocusables();
+        } else if (action === 'retryVideos') {
+            this.mediaState.videos = createMediaState();
+            this.renderVideos();
+            this.captureFocusables();
+        } else if (action === 'retryAlbums') {
+            this.albumState = {
+                items: [],
+                loaded: false,
+                loading: false,
+                error: null
+            };
+            this.renderAlbums();
+            this.captureFocusables();
+        } else if (action === 'retryAlbum') {
+            if (this.currentAlbumId) {
+                delete this.albumDetails[this.currentAlbumId];
+                this.renderAlbum({ name: 'album', params: { albumId: this.currentAlbumId } });
+                this.captureFocusables();
+            }
         } else if (action === 'openDateJump') {
             this.router.navigate('dateJump');
+        } else if (action === 'openVideosDateJump') {
+            this.router.navigate('videoDateJump');
         } else if (action === 'selectJumpYear') {
             this.dateJumpYear = Number(element.getAttribute('data-year')) || this.dateJumpYear;
-            this.renderDateJump();
+            this.renderDateJump(element.getAttribute('data-source') || 'recent');
             this.captureFocusables();
         } else if (action === 'jumpToMonth') {
-            this.applyRecentMonthFilter(
+            this.applyMediaMonthFilter(
+                element.getAttribute('data-source') || 'recent',
                 Number(element.getAttribute('data-year')),
                 Number(element.getAttribute('data-month'))
             );
         } else if (action === 'clearRecentFilter') {
             this.mediaState.recent = createMediaState();
             this.router.reset('recent');
+        } else if (action === 'clearVideosFilter') {
+            this.mediaState.videos = createMediaState();
+            this.router.reset('videos');
+        } else if (action === 'openAlbum') {
+            this.currentAlbumId = element.getAttribute('data-album-id') || '';
+            this.router.navigate('album', { albumId: this.currentAlbumId });
         } else if (action === 'openMedia') {
             this.openMediaViewer(element);
         } else if (action === 'viewerPrev') {
@@ -764,8 +1251,6 @@
             this.closeViewer();
         } else if (action === 'viewerRetry') {
             this.retryViewerImage();
-        } else if (action === 'viewerPlayPause') {
-            this.toggleViewerVideoPlayback();
         } else if (action === 'serverConnection') {
             this.showToast('Connection editing will be added after media browsing.');
         } else if (action === 'accountDetails') {
@@ -777,19 +1262,20 @@
         }
     };
 
-    App.prototype.applyRecentMonthFilter = function (year, month) {
+    App.prototype.applyMediaMonthFilter = function (source, year, month) {
+        var stateKey = source === 'videos' ? 'videos' : 'recent';
         if (!year || !month) {
             this.showToast('Choose a year and month.');
             return;
         }
 
         this.dateJumpYear = year;
-        this.mediaState.recent = createMediaState();
-        this.mediaState.recent.filter = {
+        this.mediaState[stateKey] = createMediaState();
+        this.mediaState[stateKey].filter = {
             label: monthName(month) + ' ' + year,
             timeBucket: createMonthBucket(year, month)
         };
-        this.router.reset('recent');
+        this.router.reset(stateKey === 'videos' ? 'videos' : 'recent');
     };
 
     App.prototype.saveSetup = function () {
@@ -865,7 +1351,6 @@
                 passwordInput.value = '';
             }
 
-            self.sessionStatus = 'signedIn';
             self.isBusy = false;
             self.showToast('Signed in to Immich.');
             self.router.reset('recent');

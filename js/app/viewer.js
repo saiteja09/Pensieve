@@ -8,7 +8,6 @@
     var findById = helpers.findById;
     var findIndexById = helpers.findIndexById;
     var viewerCacheKey = helpers.viewerCacheKey;
-    var formatViewerTitle = helpers.formatViewerTitle;
     var currentViewerAction = helpers.currentViewerAction;
 
     App.prototype.currentViewerItem = function () {
@@ -76,7 +75,7 @@
         var overlayClass = this.viewerOverlayVisible ? ' visible' : '';
 
         this.root.innerHTML = [
-            '<section class="viewer-screen video-viewer-screen">',
+            '<section class="viewer-screen">',
             videoUrl && !hasError ? '  <video id="viewerVideo" class="viewer-video" src="' + escapeAttr(videoUrl) + '"' + (posterUrl ? ' poster="' + escapeAttr(posterUrl) + '"' : '') + ' autoplay controls playsinline preload="auto"></video>' : '',
             !videoUrl && isLoading ? '  <div class="viewer-status"><span class="viewer-loading-dot"></span><strong>Loading video</strong></div>' : '',
             hasError ? '  <div class="viewer-status"><strong>Unable to play this video.</strong><p class="viewer-status-copy">This file may use a codec unsupported by this TV.</p><button class="primary-action compact-action focusable" type="button" data-action="viewerRetry">Retry</button></div>' : '',
@@ -85,6 +84,8 @@
             '    <div class="viewer-topbar">',
             '      <button class="viewer-action viewer-back focusable" type="button" data-action="viewerClose" aria-label="Back"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6"></path></svg></button>',
             '    </div>',
+            '    <button class="viewer-action viewer-edge viewer-prev focusable" type="button" data-action="viewerPrev" aria-label="Previous item"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6"></path></svg></button>',
+            '    <button class="viewer-action viewer-edge viewer-next focusable" type="button" data-action="viewerNext" aria-label="Next item"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"></path></svg></button>',
             '  </div>',
             '  <div id="toast" class="toast"></div>',
             '</section>'
@@ -195,13 +196,17 @@
 
     App.prototype.openMediaViewer = function (element) {
         var assetId = element.getAttribute('data-asset-id');
-        var item = findById(this.mediaState.recent.items, assetId);
+        var source = this.currentMediaSource ? this.currentMediaSource() : 'recent';
+        var items = this.currentMediaItems ? this.currentMediaItems() : this.mediaState[source].items;
+        var item = findById(items, assetId);
 
         if (!item) {
             this.showToast('This item is not available yet.');
             return;
         }
 
+        this.viewerSource = source;
+        this.viewerAlbumId = source === 'album' ? this.currentAlbumId : '';
         this.pendingFocusAssetId = assetId;
         this.viewerOverlayVisible = true;
         this.router.navigate('viewer', { assetId: assetId });
@@ -214,8 +219,18 @@
     };
 
     App.prototype.viewerItems = function () {
-        return this.mediaState.recent.items.filter(function (item) {
-            return item.type === 'image' || item.type === 'video';
+        var source = this.viewerSource === 'album' ? 'album' : (this.viewerSource === 'videos' ? 'videos' : 'recent');
+        var items = source === 'album' ? this.getAlbumDetail(this.viewerAlbumId).items : this.mediaState[source].items;
+
+        if (!findById(items, this.router.current && this.router.current.params ? this.router.current.params.assetId : '')) {
+            items = this.mediaState.recent.items.concat(this.mediaState.videos.items);
+            if (this.viewerAlbumId) {
+                items = items.concat(this.getAlbumDetail(this.viewerAlbumId).items);
+            }
+        }
+
+        return items.filter(function (item) {
+            return source === 'videos' ? item.type === 'video' : (item.type === 'image' || item.type === 'video');
         });
     };
 
@@ -244,32 +259,38 @@
 
     App.prototype.loadNextViewerPage = function () {
         var self = this;
-        var state = this.mediaState.recent;
+        var source = this.viewerSource === 'album' ? 'album' : (this.viewerSource === 'videos' ? 'videos' : 'recent');
+        if (source === 'album') {
+            this.showToast('No more items in this album.');
+            return;
+        }
+
+        var state = this.mediaState[source];
         var nextPage = normalizeNextPage(state.nextPage, state.page);
 
         if (state.loading) {
-            this.showToast('Loading more media...');
+            this.showToast(source === 'videos' ? 'Loading more videos...' : 'Loading more media...');
             return;
         }
 
         if (!state.hasMore || !nextPage || state.filter) {
-            this.showToast('No more media loaded.');
+            this.showToast(source === 'videos' ? 'No more videos loaded.' : 'No more media loaded.');
             return;
         }
 
         this.pendingViewerAction = 'viewerNext';
-        this.showToast('Loading more media...');
-        this.loadRecentMedia({
+        this.showToast(source === 'videos' ? 'Loading more videos...' : 'Loading more media...');
+        this[source === 'videos' ? 'loadVideosMedia' : 'loadRecentMedia']({
             page: nextPage,
             append: true,
             silent: true,
             onLoaded: function (media) {
                 var nextItem = media.find(function (item) {
-                    return item.type === 'image' || item.type === 'video';
+                    return source === 'videos' ? item.type === 'video' : (item.type === 'image' || item.type === 'video');
                 });
 
                 if (!nextItem) {
-                    self.showToast('No more media found on the next page.');
+                    self.showToast(source === 'videos' ? 'No more videos found on the next page.' : 'No more media found on the next page.');
                     return;
                 }
 
@@ -330,7 +351,6 @@
         delete this.viewerVideoLoads[assetId];
         delete this.viewerImageErrors[viewerCacheKey(assetId, 'preview')];
         delete this.viewerImageErrors[viewerCacheKey(assetId, 'fullsize')];
-        delete this.viewerImageWarnings[assetId];
         this.renderViewer(this.router.current);
         this.captureFocusables();
     };
@@ -391,10 +411,6 @@
                 self.pendingViewerAction = currentViewerAction(self) || self.pendingViewerAction;
                 self.renderViewer(self.router.current);
                 self.captureFocusables();
-            }
-
-            if (size === 'fullsize' && self.viewerImageUrls[viewerCacheKey(assetId, 'preview')]) {
-                self.viewerImageWarnings[assetId] = true;
             }
         });
     };

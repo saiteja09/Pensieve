@@ -101,7 +101,7 @@
         }
 
         this.queueVisibleThumbnailLoad();
-        this.loadMoreRecentIfNeeded();
+        this.loadMoreMediaIfNeeded();
     };
 
     App.prototype.moveFocus = function (direction) {
@@ -192,12 +192,12 @@
             return 6;
         }
 
-        if (current.closest('.media-grid')) {
-            return 3;
-        }
-
         if (current.closest('.album-grid')) {
             return 4;
+        }
+
+        if (current.closest('.media-grid')) {
+            return 3;
         }
 
         if (current.closest('.filter-row')) {
@@ -217,21 +217,11 @@
             var isVideo = viewerItem && viewerItem.type === 'video';
 
             if (event.key === 'left') {
-                if (isVideo) {
-                    this.seekViewerVideo(-10);
-                    return;
-                }
-
                 this.navigateViewer(-1);
                 return;
             }
 
             if (event.key === 'right') {
-                if (isVideo) {
-                    this.seekViewerVideo(10);
-                    return;
-                }
-
                 this.navigateViewer(1);
                 return;
             }
@@ -258,6 +248,18 @@
 
             if (event.key === 'playPause' || event.key === 'play' || event.key === 'pause') {
                 if (isVideo && this.toggleViewerVideoPlayback()) {
+                    return;
+                }
+            }
+
+            if (event.key === 'rewind') {
+                if (isVideo && this.seekViewerVideo(-10)) {
+                    return;
+                }
+            }
+
+            if (event.key === 'fastForward') {
+                if (isVideo && this.seekViewerVideo(10)) {
                     return;
                 }
             }

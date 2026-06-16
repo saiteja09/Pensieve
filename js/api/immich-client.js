@@ -38,24 +38,22 @@
         });
     };
 
-    ImmichClient.prototype.logout = function () {
-        return this.request('/auth/logout', {
-            method: 'POST'
-        });
-    };
-
     ImmichClient.prototype.validateToken = function () {
         return this.request('/auth/validateToken', {
             method: 'POST'
         });
     };
 
-    ImmichClient.prototype.getAuthStatus = function () {
-        return this.request('/auth/status');
-    };
-
     ImmichClient.prototype.getMyUser = function () {
         return this.request('/users/me');
+    };
+
+    ImmichClient.prototype.getAlbums = function () {
+        return this.request('/albums');
+    };
+
+    ImmichClient.prototype.getAlbumInfo = function (albumId) {
+        return this.request('/albums/' + encodeURIComponent(albumId));
     };
 
     ImmichClient.prototype.searchAssets = function (params) {
