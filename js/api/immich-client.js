@@ -56,6 +56,13 @@
         return this.request('/albums/' + encodeURIComponent(albumId));
     };
 
+    ImmichClient.prototype.updateAsset = function (assetId, updates) {
+        return this.request('/assets/' + encodeURIComponent(assetId), {
+            method: 'PUT',
+            body: updates || {}
+        });
+    };
+
     ImmichClient.prototype.searchAssets = function (params) {
         return this.request('/search/metadata', {
             method: 'POST',

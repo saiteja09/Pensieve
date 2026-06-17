@@ -216,6 +216,29 @@
             var viewerItem = this.currentViewerItem ? this.currentViewerItem() : null;
             var isVideo = viewerItem && viewerItem.type === 'video';
 
+            if (this.slideshowActive) {
+                if (event.key === 'right') {
+                    this.advanceSlideshow();
+                    return;
+                }
+
+                if (event.key === 'left') {
+                    this.stopSlideshow(true);
+                    this.navigateViewer(-1);
+                    return;
+                }
+
+                if (event.key === 'enter' || event.key === 'playPause' || event.key === 'play' || event.key === 'pause') {
+                    this.stopSlideshow(true);
+                    return;
+                }
+
+                if (event.key === 'back') {
+                    this.closeViewer();
+                    return;
+                }
+            }
+
             if (event.key === 'left') {
                 this.navigateViewer(-1);
                 return;
@@ -227,18 +250,18 @@
             }
 
             if (event.key === 'enter') {
-                if (isVideo && this.toggleViewerVideoPlayback()) {
-                    return;
-                }
-
                 var focusedViewerAction = this.focusables[this.focusIndex] ? this.focusables[this.focusIndex].getAttribute('data-action') : '';
                 if (!this.viewerOverlayVisible && focusedViewerAction !== 'viewerRetry') {
                     this.setViewerOverlayVisible(true);
                     return;
                 }
 
-                if (focusedViewerAction === 'viewerRetry' || focusedViewerAction === 'viewerClose') {
+                if (focusedViewerAction === 'viewerRetry' || focusedViewerAction === 'viewerClose' || focusedViewerAction === 'viewerFavorite' || focusedViewerAction === 'viewerSlideshow') {
                     this.activate(this.focusables[this.focusIndex]);
+                    return;
+                }
+
+                if (isVideo && this.toggleViewerVideoPlayback()) {
                     return;
                 }
 
@@ -291,7 +314,9 @@
         }
 
         if (event.key === 'playPause' || event.key === 'play' || event.key === 'pause') {
-            this.showToast('Slideshow controls will be connected after media browsing.');
+            if (this.router.current && (this.router.current.name === 'recent' || this.router.current.name === 'videos' || this.router.current.name === 'favorites' || this.router.current.name === 'album')) {
+                this.startSlideshowFromSource(this.currentMediaSource());
+            }
         }
     };
 })(window);

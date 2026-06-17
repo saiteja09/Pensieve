@@ -44,26 +44,37 @@
         var imageUrl = fullUrl || previewUrl || this.thumbnailUrls[item.id] || '';
         var isLoading = this.viewerImageLoads[viewerCacheKey(item.id, 'preview')] === 'loading' || this.viewerImageLoads[viewerCacheKey(item.id, 'fullsize')] === 'loading';
         var hasError = !imageUrl && (this.viewerImageErrors[viewerCacheKey(item.id, 'preview')] || this.viewerImageErrors[viewerCacheKey(item.id, 'fullsize')]);
-        var overlayClass = this.viewerOverlayVisible ? ' visible' : '';
-
-        this.root.innerHTML = [
-            '<section class="viewer-screen">',
-            imageUrl ? '  <img class="viewer-photo" src="' + escapeAttr(imageUrl) + '" alt="" />' : '',
-            !imageUrl && isLoading ? '  <div class="viewer-status"><span class="viewer-loading-dot"></span><strong>Loading photo</strong></div>' : '',
-            hasError ? '  <div class="viewer-status"><strong>Unable to load this photo.</strong><button class="primary-action compact-action focusable" type="button" data-action="viewerRetry">Retry</button></div>' : '',
-            !imageUrl && !isLoading && !hasError ? '  <div class="viewer-status"><span class="viewer-loading-dot"></span><strong>Preparing photo</strong></div>' : '',
+        var overlayClass = !this.slideshowActive && this.viewerOverlayVisible ? ' visible' : '';
+        var displayModeClass = this.getPhotoDisplayMode && this.getPhotoDisplayMode() === 'fill' ? ' viewer-photo-fill' : ' viewer-photo-fit';
+        var favoriteAction = this.viewerFavoriteAction(item);
+        var slideshowAction = this.viewerSlideshowAction();
+        var overlay = this.slideshowActive ? '' : [
             '  <div class="viewer-overlay' + overlayClass + '">',
             '    <div class="viewer-topbar">',
             '      <button class="viewer-action viewer-back focusable" type="button" data-action="viewerClose" aria-label="Back"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6"></path></svg></button>',
+            '      <div class="viewer-action-group">',
+            favoriteAction,
+            slideshowAction,
+            '      </div>',
             '    </div>',
             '    <button class="viewer-action viewer-edge viewer-prev focusable" type="button" data-action="viewerPrev" aria-label="Previous photo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6"></path></svg></button>',
             '    <button class="viewer-action viewer-edge viewer-next focusable" type="button" data-action="viewerNext" aria-label="Next photo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"></path></svg></button>',
-            '  </div>',
+            '  </div>'
+        ].join('');
+
+        this.root.innerHTML = [
+            '<section class="viewer-screen">',
+            imageUrl ? '  <img class="viewer-photo' + displayModeClass + '" src="' + escapeAttr(imageUrl) + '" alt="" />' : '',
+            !imageUrl && isLoading ? '  <div class="viewer-status"><span class="viewer-loading-dot"></span><strong>Loading photo</strong></div>' : '',
+            hasError ? '  <div class="viewer-status"><strong>Unable to load this photo.</strong><button class="primary-action compact-action focusable" type="button" data-action="viewerRetry">Retry</button></div>' : '',
+            !imageUrl && !isLoading && !hasError ? '  <div class="viewer-status"><span class="viewer-loading-dot"></span><strong>Preparing photo</strong></div>' : '',
+            overlay,
             '  <div id="toast" class="toast"></div>',
             '</section>'
         ].join('');
 
         this.loadViewerImage(item.id);
+        this.scheduleSlideshowAdvance();
         this.preloadViewerNeighbors(items, index);
     };
 
@@ -72,27 +83,57 @@
         var posterUrl = this.thumbnailUrls[item.id] || '';
         var isLoading = this.viewerVideoLoads[item.id] === 'loading';
         var hasError = this.viewerVideoErrors[item.id];
-        var overlayClass = this.viewerOverlayVisible ? ' visible' : '';
-
-        this.root.innerHTML = [
-            '<section class="viewer-screen">',
-            videoUrl && !hasError ? '  <video id="viewerVideo" class="viewer-video" src="' + escapeAttr(videoUrl) + '"' + (posterUrl ? ' poster="' + escapeAttr(posterUrl) + '"' : '') + ' autoplay controls playsinline preload="auto"></video>' : '',
-            !videoUrl && isLoading ? '  <div class="viewer-status"><span class="viewer-loading-dot"></span><strong>Loading video</strong></div>' : '',
-            hasError ? '  <div class="viewer-status"><strong>Unable to play this video.</strong><p class="viewer-status-copy">This file may use a codec unsupported by this TV.</p><button class="primary-action compact-action focusable" type="button" data-action="viewerRetry">Retry</button></div>' : '',
-            !videoUrl && !isLoading && !hasError ? '  <div class="viewer-status"><span class="viewer-loading-dot"></span><strong>Preparing video</strong></div>' : '',
+        var overlayClass = !this.slideshowActive && this.viewerOverlayVisible ? ' visible' : '';
+        var favoriteAction = this.viewerFavoriteAction(item);
+        var slideshowAction = this.viewerSlideshowAction();
+        var controls = this.slideshowActive ? '' : ' controls';
+        var overlay = this.slideshowActive ? '' : [
             '  <div class="viewer-overlay video-viewer-overlay' + overlayClass + '">',
             '    <div class="viewer-topbar">',
             '      <button class="viewer-action viewer-back focusable" type="button" data-action="viewerClose" aria-label="Back"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6"></path></svg></button>',
+            '      <div class="viewer-action-group">',
+            favoriteAction,
+            slideshowAction,
+            '      </div>',
             '    </div>',
             '    <button class="viewer-action viewer-edge viewer-prev focusable" type="button" data-action="viewerPrev" aria-label="Previous item"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6"></path></svg></button>',
             '    <button class="viewer-action viewer-edge viewer-next focusable" type="button" data-action="viewerNext" aria-label="Next item"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"></path></svg></button>',
-            '  </div>',
+            '  </div>'
+        ].join('');
+
+        this.root.innerHTML = [
+            '<section class="viewer-screen">',
+            videoUrl && !hasError ? '  <video id="viewerVideo" class="viewer-video" src="' + escapeAttr(videoUrl) + '"' + (posterUrl ? ' poster="' + escapeAttr(posterUrl) + '"' : '') + ' autoplay' + controls + ' playsinline preload="auto"></video>' : '',
+            !videoUrl && isLoading ? '  <div class="viewer-status"><span class="viewer-loading-dot"></span><strong>Loading video</strong></div>' : '',
+            hasError ? '  <div class="viewer-status"><strong>Unable to play this video.</strong><p class="viewer-status-copy">This file may use a codec unsupported by this TV.</p><button class="primary-action compact-action focusable" type="button" data-action="viewerRetry">Retry</button></div>' : '',
+            !videoUrl && !isLoading && !hasError ? '  <div class="viewer-status"><span class="viewer-loading-dot"></span><strong>Preparing video</strong></div>' : '',
+            overlay,
             '  <div id="toast" class="toast"></div>',
             '</section>'
         ].join('');
 
         this.loadViewerVideo(item.id);
         this.bindViewerVideo(item.id);
+        if (hasError) {
+            this.scheduleSlideshowAdvance();
+        }
+    };
+
+    App.prototype.viewerFavoriteAction = function (item) {
+        var active = item && item.isFavorite;
+        return [
+            '<button class="viewer-action viewer-favorite focusable' + (active ? ' active' : '') + '" type="button" data-action="viewerFavorite" aria-label="' + (active ? 'Remove from favorites' : 'Add to favorites') + '">',
+            '  <svg class="heart-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 9.5a5.5 5.5 0 0 1 9.591-3.676.56.56 0 0 0 .818 0A5.49 5.49 0 0 1 22 9.5c0 2.29-1.5 4-3 5.5l-5.492 5.313a2 2 0 0 1-3 .019L5 15c-1.5-1.5-3-3.2-3-5.5"></path></svg>',
+            '</button>'
+        ].join('');
+    };
+
+    App.prototype.viewerSlideshowAction = function () {
+        return [
+            '<button class="viewer-action viewer-slideshow focusable" type="button" data-action="viewerSlideshow" aria-label="Start slideshow">',
+            '  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.75v12.5a1 1 0 0 0 1.55.83l9.4-6.25a1 1 0 0 0 0-1.66l-9.4-6.25A1 1 0 0 0 8 5.75z"></path></svg>',
+            '</button>'
+        ].join('');
     };
 
     App.prototype.loadViewerVideo = function (assetId) {
@@ -141,9 +182,16 @@
             self.scheduleViewerOverlayAutoHide(video);
         });
         video.addEventListener('pause', function () {
+            if (self.slideshowActive) {
+                return;
+            }
             self.setViewerOverlayVisible(true);
         });
         video.addEventListener('ended', function () {
+            if (self.slideshowActive) {
+                self.advanceSlideshow();
+                return;
+            }
             self.setViewerOverlayVisible(true);
         });
         video.addEventListener('error', function () {
@@ -157,6 +205,10 @@
         video.play().then(function () {
             self.scheduleViewerOverlayAutoHide(video);
         }).catch(function () {
+            if (self.slideshowActive) {
+                self.scheduleSlideshowAdvance();
+                return;
+            }
             self.setViewerOverlayVisible(true);
             self.showToast('Press Play/Pause to start video.');
         });
@@ -208,29 +260,190 @@
         this.viewerSource = source;
         this.viewerAlbumId = source === 'album' ? this.currentAlbumId : '';
         this.pendingFocusAssetId = assetId;
+        this.stopSlideshow(false);
         this.viewerOverlayVisible = true;
         this.router.navigate('viewer', { assetId: assetId });
     };
 
     App.prototype.closeViewer = function () {
+        this.stopSlideshow(false);
         if (!this.router.back()) {
             this.router.reset('recent');
         }
     };
 
+    App.prototype.startSlideshowFromSource = function (source) {
+        var stateKey = source === 'videos' ? 'videos' : (source === 'favorites' ? 'favorites' : (source === 'album' ? 'album' : 'recent'));
+        var items = stateKey === 'album' ? this.sortMediaItems(this.getAlbumDetail(this.currentAlbumId).items, 'album') : this.sortMediaItems(this.mediaState[stateKey].items, stateKey);
+        var firstItem = items.find(function (item) {
+            return item && (stateKey !== 'favorites' || item.isFavorite) && (item.type === 'image' || item.type === 'video');
+        });
+
+        if (!firstItem) {
+            this.showToast('No media available for slideshow.');
+            return;
+        }
+
+        this.startSlideshowAt(stateKey, firstItem.id);
+    };
+
+    App.prototype.startSlideshowFromViewer = function () {
+        var item = this.currentViewerItem();
+
+        if (!item) {
+            this.showToast('No media available for slideshow.');
+            return;
+        }
+
+        this.startSlideshowAt(this.viewerSource || 'recent', item.id);
+    };
+
+    App.prototype.toggleViewerSlideshow = function () {
+        if (this.slideshowActive) {
+            this.stopSlideshow(true);
+            return;
+        }
+
+        this.startSlideshowFromViewer();
+    };
+
+    App.prototype.startSlideshowAt = function (source, assetId) {
+        this.clearSlideshowTimer();
+        this.slideshowActive = true;
+        this.slideshowSource = source || 'recent';
+        this.viewerSource = this.slideshowSource;
+        this.viewerAlbumId = this.slideshowSource === 'album' ? (this.currentAlbumId || this.viewerAlbumId) : '';
+        this.pendingFocusAssetId = assetId;
+        this.pendingViewerAction = null;
+        this.viewerOverlayVisible = false;
+        this.router.navigate('viewer', { assetId: assetId }, { replace: this.router.current && this.router.current.name === 'viewer' });
+    };
+
+    App.prototype.stopSlideshow = function (showOverlay) {
+        this.clearSlideshowTimer();
+        this.slideshowActive = false;
+
+        if (showOverlay && this.router.current && this.router.current.name === 'viewer') {
+            this.viewerOverlayVisible = true;
+            this.renderViewer(this.router.current);
+            this.captureFocusables();
+        }
+    };
+
+    App.prototype.clearSlideshowTimer = function () {
+        if (this.slideshowTimer) {
+            global.clearTimeout(this.slideshowTimer);
+            this.slideshowTimer = null;
+        }
+    };
+
+    App.prototype.scheduleSlideshowAdvance = function () {
+        var self = this;
+        var item = this.currentViewerItem();
+
+        this.clearSlideshowTimer();
+
+        if (!this.slideshowActive || !item || item.type === 'video') {
+            return;
+        }
+
+        this.slideshowTimer = global.setTimeout(function () {
+            self.slideshowTimer = null;
+            self.advanceSlideshow();
+        }, this.getSlideshowIntervalSeconds() * 1000);
+    };
+
+    App.prototype.advanceSlideshow = function () {
+        var self = this;
+        var current = this.router.current && this.router.current.params ? this.router.current.params.assetId : '';
+        var items = this.viewerItems();
+        var index = findIndexById(items, current);
+        var nextIndex = index + 1;
+
+        if (!this.slideshowActive) {
+            return;
+        }
+
+        if (index < 0 || !items.length) {
+            this.stopSlideshow(true);
+            return;
+        }
+
+        if (nextIndex < items.length) {
+            this.pendingFocusAssetId = items[nextIndex].id;
+            this.viewerOverlayVisible = false;
+            this.router.navigate('viewer', { assetId: items[nextIndex].id }, { replace: true });
+            return;
+        }
+
+        this.loadNextSlideshowPage(function (nextItem) {
+            if (!nextItem) {
+                self.stopSlideshow(true);
+                self.showToast('Slideshow finished.');
+                return;
+            }
+
+            self.pendingFocusAssetId = nextItem.id;
+            self.viewerOverlayVisible = false;
+            self.router.navigate('viewer', { assetId: nextItem.id }, { replace: true });
+        });
+    };
+
+    App.prototype.loadNextSlideshowPage = function (callback) {
+        var self = this;
+        var source = this.viewerSource === 'favorites' ? 'favorites' : (this.viewerSource === 'videos' ? 'videos' : (this.viewerSource === 'album' ? 'album' : 'recent'));
+
+        if (source === 'album') {
+            callback(null);
+            return;
+        }
+
+        var state = this.mediaState[source];
+        var nextPage = normalizeNextPage(state.nextPage, state.page);
+
+        if (state.loading) {
+            this.clearSlideshowTimer();
+            this.slideshowTimer = global.setTimeout(function () {
+                self.slideshowTimer = null;
+                self.advanceSlideshow();
+            }, 1000);
+            return;
+        }
+
+        if (!state.hasMore || !nextPage || state.filter) {
+            callback(null);
+            return;
+        }
+
+        this[this.mediaLoaderName ? this.mediaLoaderName(source) : 'loadRecentMedia']({
+            page: nextPage,
+            append: true,
+            silent: true,
+            onLoaded: function (media) {
+                var nextItem = media.find(function (item) {
+                    return source === 'videos' ? item.type === 'video' : (item.type === 'image' || item.type === 'video');
+                });
+                callback(nextItem || null);
+            },
+            onError: function () {
+                callback(null);
+            }
+        });
+    };
+
     App.prototype.viewerItems = function () {
-        var source = this.viewerSource === 'album' ? 'album' : (this.viewerSource === 'videos' ? 'videos' : 'recent');
+        var source = this.viewerSource === 'album' ? 'album' : (this.viewerSource === 'favorites' ? 'favorites' : (this.viewerSource === 'videos' ? 'videos' : 'recent'));
         var items = source === 'album' ? this.getAlbumDetail(this.viewerAlbumId).items : this.mediaState[source].items;
 
         if (!findById(items, this.router.current && this.router.current.params ? this.router.current.params.assetId : '')) {
-            items = this.mediaState.recent.items.concat(this.mediaState.videos.items);
+            items = this.mediaState.recent.items.concat(this.mediaState.videos.items, this.mediaState.favorites.items);
             if (this.viewerAlbumId) {
                 items = items.concat(this.getAlbumDetail(this.viewerAlbumId).items);
             }
         }
 
         items = items.filter(function (item) {
-            return source === 'videos' ? item.type === 'video' : (item.type === 'image' || item.type === 'video');
+            return (source !== 'favorites' || item.isFavorite) && (source === 'videos' ? item.type === 'video' : (item.type === 'image' || item.type === 'video'));
         });
 
         return this.sortMediaItems ? this.sortMediaItems(items, source) : items;
@@ -261,7 +474,7 @@
 
     App.prototype.loadNextViewerPage = function () {
         var self = this;
-        var source = this.viewerSource === 'album' ? 'album' : (this.viewerSource === 'videos' ? 'videos' : 'recent');
+        var source = this.viewerSource === 'album' ? 'album' : (this.viewerSource === 'favorites' ? 'favorites' : (this.viewerSource === 'videos' ? 'videos' : 'recent'));
         if (source === 'album') {
             this.showToast('No more items in this album.');
             return;
@@ -282,7 +495,7 @@
 
         this.pendingViewerAction = 'viewerNext';
         this.showToast(source === 'videos' ? 'Loading more videos...' : 'Loading more media...');
-        this[source === 'videos' ? 'loadVideosMedia' : 'loadRecentMedia']({
+        this[this.mediaLoaderName ? this.mediaLoaderName(source) : (source === 'videos' ? 'loadVideosMedia' : 'loadRecentMedia')]({
             page: nextPage,
             append: true,
             silent: true,

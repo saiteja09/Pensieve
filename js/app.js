@@ -26,6 +26,7 @@
     function App(root) {
         this.root = root;
         this.settings = namespace.Settings.read();
+        this.setupAuthMode = this.settings.authMode === 'apiKey' ? 'apiKey' : 'password';
         this.router = new namespace.Router(this.renderRoute.bind(this));
         this.focusables = [];
         this.focusIndex = 0;
@@ -34,7 +35,8 @@
         this.isBusy = false;
         this.mediaState = {
             recent: createMediaState(),
-            videos: createMediaState()
+            videos: createMediaState(),
+            favorites: createMediaState()
         };
         this.albumState = {
             items: [],
@@ -48,6 +50,7 @@
         this.mediaSortOrder = {
             recent: 'desc',
             videos: 'desc',
+            favorites: 'desc',
             albums: 'desc',
             album: 'desc'
         };
@@ -64,6 +67,9 @@
         this.viewerOverlayVisible = true;
         this.viewerOverlayTimer = null;
         this.viewerSource = 'recent';
+        this.slideshowActive = false;
+        this.slideshowSource = 'recent';
+        this.slideshowTimer = null;
         this.pendingViewerAction = null;
         this.pendingFocusAssetId = null;
         this.pendingScrollTop = null;
@@ -152,7 +158,7 @@
         } else if (route.name === 'album') {
             this.renderAlbum(route);
         } else if (route.name === 'favorites') {
-            this.renderGridStatus('favorites', 'Favorites', '', 'Favorites will connect to Immich in the next library slice.');
+            this.renderFavorites();
         } else if (route.name === 'videos') {
             this.renderVideos();
         } else {
@@ -173,7 +179,8 @@
     };
 
     App.prototype.renderSetup = function () {
-        var loginText = this.isBusy ? 'Signing in...' : 'Login';
+        var isApiKey = this.setupAuthMode === 'apiKey';
+        var loginText = this.isBusy ? 'Signing in...' : (isApiKey ? 'Save API key' : 'Login');
         this.root.innerHTML = [
             '<section class="login-screen">',
             '  <div class="login-brand">',
@@ -191,22 +198,29 @@
             '        <input id="serverUrl" class="text-input focusable" type="text" inputmode="url" value="' + escapeAttr(this.settings.serverUrl) + '" placeholder="https://immich.example.com" />',
             '      </div>',
             '    </div>',
-            '    <div class="field">',
-            '      <label for="email">Email</label>',
-            '      <div class="input-shell">',
-            '        <span class="input-icon">@</span>',
-            '        <input id="email" class="text-input focusable" type="email" value="' + escapeAttr(this.settings.userEmail) + '" placeholder="you@example.com" />',
-            '      </div>',
-            '    </div>',
-            '    <div class="field">',
-            '      <label for="password">Password</label>',
-            '      <div class="input-shell">',
-            '        <span class="input-icon">PWD</span>',
-            '        <input id="password" class="text-input focusable" type="password" placeholder="Immich password" />',
-            '      </div>',
-            '    </div>',
+            isApiKey ? '' : '    <div class="field">',
+            isApiKey ? '' : '      <label for="email">Email</label>',
+            isApiKey ? '' : '      <div class="input-shell">',
+            isApiKey ? '' : '        <span class="input-icon">@</span>',
+            isApiKey ? '' : '        <input id="email" class="text-input focusable" type="email" value="' + escapeAttr(this.settings.userEmail) + '" placeholder="you@example.com" />',
+            isApiKey ? '' : '      </div>',
+            isApiKey ? '' : '    </div>',
+            isApiKey ? '' : '    <div class="field">',
+            isApiKey ? '' : '      <label for="password">Password</label>',
+            isApiKey ? '' : '      <div class="input-shell">',
+            isApiKey ? '' : '        <span class="input-icon">PWD</span>',
+            isApiKey ? '' : '        <input id="password" class="text-input focusable" type="password" placeholder="Immich password" />',
+            isApiKey ? '' : '      </div>',
+            isApiKey ? '' : '    </div>',
+            isApiKey ? '    <div class="field">' : '',
+            isApiKey ? '      <label for="apiKey">API key</label>' : '',
+            isApiKey ? '      <div class="input-shell">' : '',
+            isApiKey ? '        <span class="input-icon">KEY</span>' : '',
+            isApiKey ? '        <input id="apiKey" class="text-input focusable" type="password" value="' + escapeAttr(this.settings.apiKey) + '" placeholder="Immich API key" />' : '',
+            isApiKey ? '      </div>' : '',
+            isApiKey ? '    </div>' : '',
             '    <button class="primary-action focusable" type="button" data-action="saveSetup"' + (this.isBusy ? ' disabled' : '') + '>' + loginText + '</button>',
-            '    <button class="text-action focusable" type="button" data-action="apiKeySetup">Advanced: use API key</button>',
+            '    <button class="text-action focusable" type="button" data-action="apiKeySetup">' + (isApiKey ? 'Use password instead' : 'Advanced: use API key') + '</button>',
             '  </div>',
             '  <div id="toast" class="toast"></div>',
             '</section>'
@@ -277,6 +291,38 @@
         this.loadVisibleThumbnails(sortedItems);
     };
 
+    App.prototype.renderFavorites = function () {
+        var state = this.mediaState.favorites;
+        var favoriteItems;
+
+        if (!state.loaded && !state.loading && !state.error) {
+            this.loadFavoritesMedia();
+        }
+
+        if (state.loading && !state.items.length) {
+            this.renderGridStatus('favorites', 'Favorites', '', 'Loading your favorites...');
+            return;
+        }
+
+        if (state.error && !state.items.length) {
+            this.renderGridStatus('favorites', 'Favorites', '', 'Unable to load favorites.', 'Retry', 'retryFavorites');
+            return;
+        }
+
+        favoriteItems = state.items.filter(function (item) {
+            return item.isFavorite;
+        });
+
+        if (state.loaded && !favoriteItems.length) {
+            this.renderGridStatus('favorites', 'Favorites', '', 'No favorites were found.');
+            return;
+        }
+
+        var sortedItems = this.sortMediaItems(favoriteItems, 'favorites');
+        this.renderMediaTimeline('favorites', 'Favorites', '', '', sortedItems, this.sortHeaderAction('favorites') + this.slideshowHeaderAction('favorites'));
+        this.loadVisibleThumbnails(sortedItems);
+    };
+
     App.prototype.renderRecentTimeline = function (items) {
         this.renderMediaTimeline('recent', 'Library', this.mediaSubtitle('recent'), this.mediaToolbar('recent'), items, this.timelineHeaderActions('recent'));
     };
@@ -330,7 +376,7 @@
     };
 
     App.prototype.timelineHeaderActions = function (source) {
-        return this.sortHeaderAction(source) + this.dateJumpHeaderAction(source);
+        return this.sortHeaderAction(source) + this.dateJumpHeaderAction(source) + this.slideshowHeaderAction(source);
     };
 
     App.prototype.dateJumpHeaderAction = function (source) {
@@ -354,8 +400,16 @@
         ].join('');
     };
 
+    App.prototype.slideshowHeaderAction = function (source) {
+        return [
+            '<button class="header-icon-action focusable" type="button" data-action="startSlideshow" data-source="' + escapeAttr(source) + '" aria-label="Start slideshow">',
+            '  <svg class="header-svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.75v12.5a1 1 0 0 0 1.55.83l9.4-6.25a1 1 0 0 0 0-1.66l-9.4-6.25A1 1 0 0 0 8 5.75z"></path></svg>',
+            '</button>'
+        ].join('');
+    };
+
     App.prototype.getSortOrder = function (source) {
-        var key = source === 'videos' ? 'videos' : (source === 'albums' ? 'albums' : (source === 'album' ? 'album' : 'recent'));
+        var key = source === 'videos' ? 'videos' : (source === 'favorites' ? 'favorites' : (source === 'albums' ? 'albums' : (source === 'album' ? 'album' : 'recent')));
         return this.mediaSortOrder[key] === 'asc' ? 'asc' : 'desc';
     };
 
@@ -565,8 +619,9 @@
         }
 
         var sortedItems = this.sortMediaItems(detail.items, 'album');
-        this.renderMediaTimeline('albums', title, subtitle, this.albumToolbar(), sortedItems, this.sortHeaderAction('album'));
+        this.renderMediaTimeline('albums', title, subtitle, this.albumToolbar(), sortedItems, this.sortHeaderAction('album') + this.slideshowHeaderAction('album'));
         this.loadVisibleThumbnails(sortedItems);
+
     };
 
     App.prototype.albumTile = function (album) {
@@ -811,15 +866,21 @@
         var account = this.settings.userEmail || this.settings.userName || 'Not signed in';
         var version = this.settings.serverVersion ? 'Immich ' + this.settings.serverVersion : 'Version unknown';
         this.root.innerHTML = this.shell('settings', [
-            '<main class="settings-canvas">',
+            '<main class="content-canvas settings-canvas">',
             this.pageHeader('Settings', ''),
             '  <div class="settings-list">',
-            this.settingsItem('Server Connection', server + ' - ' + version, 'DNS', 'serverConnection'),
-            this.settingsItem('Account', account, 'USR', 'accountDetails'),
-            this.settingsItem('Slideshow', 'Interval: 10 seconds.', 'PLY', 'comingSoon'),
-            this.settingsItem('Display', 'Photo mode: Fit to screen.', 'PIC', 'comingSoon'),
+            '    <section class="settings-section">',
+            '      <div class="settings-section-header compact-settings-header">',
+            '        <h2>Connection</h2>',
+            '        <p>' + escapeHtml(version) + '</p>',
+            '      </div>',
+            this.settingsItem('Server', server, 'DNS', 'serverConnection', 'Logout'),
+            this.settingsItem('Account', account, 'USR', 'accountDetails', 'Info'),
+            '    </section>',
+            this.slideshowSettings(),
+            this.displaySettings(),
             this.appearanceSettings(),
-            this.settingsItem('Clear saved settings', 'Remove local server and session details.', 'CLR', 'clearSettings'),
+            this.settingsItem('Reset settings', 'Restore app preferences without signing out.', 'RST', 'resetSettings', 'Reset'),
             '  </div>',
             '</main>'
         ].join(''));
@@ -847,9 +908,9 @@
 
         return [
             '<section class="settings-section appearance-settings">',
-            '  <div class="settings-section-header">',
+            '  <div class="settings-section-header compact-settings-header">',
             '    <h2>Appearance</h2>',
-            '    <p>Choose a high-contrast primary accent color.</p>',
+            '    <p>Accent color</p>',
             '  </div>',
             '  <div class="palette-grid">',
             accentPalettes.map(function (palette) {
@@ -865,6 +926,111 @@
             '  </div>',
             '</section>'
         ].join('');
+    };
+
+    App.prototype.slideshowSettings = function () {
+        var interval = this.getSlideshowIntervalSeconds();
+
+        return [
+            '<section class="settings-section slideshow-settings">',
+            '  <div class="settings-section-header compact-settings-header">',
+            '    <h2>Slideshow</h2>',
+            '    <p>Photo interval: ' + interval + ' second' + (interval === 1 ? '' : 's') + '.</p>',
+            '  </div>',
+            '  <div class="slideshow-interval-row">',
+            '    <button class="interval-step focusable" type="button" data-action="decreaseSlideshowInterval" aria-label="Decrease slideshow interval">-</button>',
+            '    <label class="interval-field">',
+            '      <span>Seconds</span>',
+            '      <input class="interval-input focusable" id="slideshowInterval" type="number" min="1" max="300" step="1" value="' + interval + '" />',
+            '    </label>',
+            '    <button class="interval-step focusable" type="button" data-action="increaseSlideshowInterval" aria-label="Increase slideshow interval">+</button>',
+            '    <button class="primary-action compact-action focusable" type="button" data-action="saveSlideshowInterval">Save</button>',
+            '  </div>',
+            '</section>'
+        ].join('');
+    };
+
+    App.prototype.displaySettings = function () {
+        var mode = this.getPhotoDisplayMode();
+
+        return [
+            '<section class="settings-section display-settings">',
+            '  <div class="settings-section-header compact-settings-header">',
+            '    <h2>Display</h2>',
+            '    <p>Photo viewer mode</p>',
+            '  </div>',
+            '  <div class="segmented-control">',
+            this.displayModeOption('fit', 'Fit', 'Show the entire photo', mode),
+            this.displayModeOption('fill', 'Fill', 'Fill the screen', mode),
+            '  </div>',
+            '</section>'
+        ].join('');
+    };
+
+    App.prototype.displayModeOption = function (mode, label, detail, selectedMode) {
+        var selected = mode === selectedMode ? ' selected' : '';
+        var ariaLabel = label + ', ' + detail + (selected ? ', selected' : '');
+
+        return [
+            '<button class="segmented-option focusable' + selected + '" type="button" data-action="selectPhotoDisplayMode" data-display-mode="' + escapeAttr(mode) + '" aria-label="' + escapeAttr(ariaLabel) + '">',
+            '  <strong>' + escapeHtml(label) + '</strong>',
+            '  <small>' + escapeHtml(detail) + '</small>',
+            '</button>'
+        ].join('');
+    };
+
+    App.prototype.getPhotoDisplayMode = function () {
+        return this.settings.photoDisplayMode === 'fill' ? 'fill' : 'fit';
+    };
+
+    App.prototype.selectPhotoDisplayMode = function (mode) {
+        var nextMode = mode === 'fill' ? 'fill' : 'fit';
+        var label = nextMode === 'fill' ? 'Fill screen' : 'Fit to screen';
+
+        this.settings = namespace.Settings.write(Object.assign({}, this.settings, {
+            photoDisplayMode: nextMode
+        }));
+        this.renderSettings();
+        this.captureFocusables();
+        this.showToast('Photo display set to ' + label + '.');
+    };
+
+    App.prototype.resetAppSettings = function () {
+        this.settings = namespace.Settings.write(Object.assign({}, this.settings, {
+            appearanceAccentId: namespace.Settings.defaults.appearanceAccentId,
+            slideshowIntervalSeconds: namespace.Settings.defaults.slideshowIntervalSeconds,
+            slideshowShuffle: namespace.Settings.defaults.slideshowShuffle,
+            photoDisplayMode: namespace.Settings.defaults.photoDisplayMode
+        }));
+        this.applyAppearance();
+        this.renderSettings();
+        this.captureFocusables();
+        this.showToast('App settings reset.');
+    };
+
+    App.prototype.getSlideshowIntervalSeconds = function () {
+        return this.clampSlideshowInterval(this.settings.slideshowIntervalSeconds);
+    };
+
+    App.prototype.clampSlideshowInterval = function (value) {
+        var interval = Number(value);
+
+        if (!isFinite(interval)) {
+            interval = namespace.Settings.defaults.slideshowIntervalSeconds || 10;
+        }
+
+        return Math.max(1, Math.min(300, Math.round(interval)));
+    };
+
+    App.prototype.saveSlideshowInterval = function (value) {
+        var interval = this.clampSlideshowInterval(value);
+
+        this.settings = namespace.Settings.write(Object.assign({}, this.settings, {
+            slideshowIntervalSeconds: interval
+        }));
+        this.renderSettings();
+        this.captureFocusables();
+        this.showToast('Slideshow interval set to ' + interval + ' second' + (interval === 1 ? '' : 's') + '.');
     };
 
     App.prototype.selectAccent = function (accentId) {
@@ -945,7 +1111,8 @@
     };
 
     App.prototype.mediaTile = function (item) {
-        var badge = item.type === 'video' ? '<span class="media-badge">VID</span>' : '';
+        var badge = item.type === 'video' ? '<span class="media-badge media-video-badge" aria-label="Video"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5"></path><rect x="2" y="6" width="14" height="12" rx="2"></rect></svg></span>' : '';
+        var favoriteBadge = item.isFavorite ? '<span class="media-favorite-badge" aria-label="Favorite"><svg class="heart-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 9.5a5.5 5.5 0 0 1 9.591-3.676.56.56 0 0 0 .818 0A5.49 5.49 0 0 1 22 9.5c0 2.29-1.5 4-3 5.5l-5.492 5.313a2 2 0 0 1-3 .019L5 15c-1.5-1.5-3-3.2-3-5.5"></path></svg></span>' : '';
         var assetId = item.id ? ' data-asset-id="' + escapeAttr(item.id) + '"' : '';
         var hasRecentError = item.id && this.thumbnailErrors[item.id] && Date.now() - this.thumbnailErrors[item.id] < 10000;
         var thumbnail = item.thumbnailUrl ? '<img class="media-thumb" src="' + escapeAttr(item.thumbnailUrl) + '" alt="" />' : this.thumbnailPlaceholder(hasRecentError);
@@ -953,6 +1120,7 @@
             '<button class="media-card focusable tone-' + (item.tone || 'forest') + ' ' + (item.ratioClass || 'ratio-square') + '" type="button" data-action="openMedia"' + assetId + '>',
             '  <span class="media-art">' + thumbnail + '</span>',
             badge,
+            favoriteBadge,
             '</button>'
         ].join('');
     };
@@ -1084,6 +1252,60 @@
         });
     };
 
+    App.prototype.loadFavoritesMedia = function (options) {
+        var self = this;
+        var state = this.mediaState.favorites;
+        var loadOptions = options || {};
+        var page = loadOptions.page || state.page || 1;
+        var append = Boolean(loadOptions.append);
+        var silent = Boolean(loadOptions.silent);
+
+        if (state.loading) {
+            return;
+        }
+
+        state.loading = true;
+        state.error = null;
+
+        this.createClient().searchAssets({
+            page: page,
+            size: 60,
+            order: this.getSortOrder('favorites'),
+            visibility: 'timeline',
+            isFavorite: true,
+            withExif: true
+        }).then(function (response) {
+            var assets = extractSearchItems(response).filter(isSupportedAsset);
+            var media = assets.map(mapAssetToMedia);
+            state.items = append ? mergeMediaItems(state.items, media) : media;
+            state.loaded = true;
+            state.loading = false;
+            state.page = page;
+            state.nextPage = getSearchNextPage(response);
+            state.hasMore = Boolean(state.nextPage);
+            if (typeof loadOptions.onLoaded === 'function') {
+                loadOptions.onLoaded(media, response);
+            }
+
+            if (!silent) {
+                self.renderRoute({ name: 'favorites' });
+            }
+        }).catch(function (error) {
+            console.warn('Favorites load failed', error);
+            state.error = error;
+            state.loading = false;
+            state.loaded = append ? state.loaded : false;
+            if (typeof loadOptions.onError === 'function') {
+                loadOptions.onError(error);
+            }
+
+            if (!silent) {
+                self.renderRoute({ name: 'favorites' });
+            }
+            self.showToast(formatMediaError(error));
+        });
+    };
+
     App.prototype.loadRecentBucket = function (filter) {
         var self = this;
         var state = this.mediaState.recent;
@@ -1141,6 +1363,10 @@
             return 'videos';
         }
 
+        if (this.router.current && this.router.current.name === 'favorites') {
+            return 'favorites';
+        }
+
         if (this.router.current && this.router.current.name === 'album') {
             return 'album';
         }
@@ -1182,10 +1408,22 @@
 
         this.pendingFocusAssetId = assetId;
         this.pendingScrollTop = timeline ? timeline.scrollTop : null;
-        this[source === 'videos' ? 'loadVideosMedia' : 'loadRecentMedia']({
+        this[this.mediaLoaderName(source)]({
             page: nextPage,
             append: true
         });
+    };
+
+    App.prototype.mediaLoaderName = function (source) {
+        if (source === 'videos') {
+            return 'loadVideosMedia';
+        }
+
+        if (source === 'favorites') {
+            return 'loadFavoritesMedia';
+        }
+
+        return 'loadRecentMedia';
     };
 
     App.prototype.bindScrollLoading = function () {
@@ -1300,7 +1538,85 @@
         tile.innerHTML = this.thumbnailPlaceholder(true);
     };
 
-    App.prototype.settingsItem = function (title, detail, icon, action) {
+    App.prototype.toggleCurrentFavorite = function () {
+        var item = this.currentViewerItem ? this.currentViewerItem() : null;
+        var nextValue;
+
+        if (!item || !item.id) {
+            this.showToast('This item is not available yet.');
+            return;
+        }
+
+        nextValue = !item.isFavorite;
+        this.setMediaFavoriteState(item.id, nextValue);
+        this.pendingViewerAction = 'viewerFavorite';
+        this.renderViewer(this.router.current);
+        this.captureFocusables();
+
+        this.createClient().updateAsset(item.id, {
+            isFavorite: nextValue
+        }).then(function (asset) {
+            var savedValue = asset && asset.isFavorite !== undefined ? Boolean(asset.isFavorite) : nextValue;
+            this.setMediaFavoriteState(item.id, savedValue);
+            this.showToast(savedValue ? 'Added to favorites.' : 'Removed from favorites.');
+        }.bind(this)).catch(function (error) {
+            console.warn('Favorite update failed', error);
+            this.setMediaFavoriteState(item.id, !nextValue);
+            this.renderViewer(this.router.current);
+            this.captureFocusables();
+            this.showToast(formatMediaError(error));
+        }.bind(this));
+    };
+
+    App.prototype.setMediaFavoriteState = function (assetId, isFavorite) {
+        var self = this;
+        var sourceItem = this.findMediaItem(assetId);
+
+        Object.keys(this.mediaState).forEach(function (key) {
+            if (key === 'favorites' && isFavorite && sourceItem && self.mediaState[key].loaded && !findById(self.mediaState[key].items, assetId)) {
+                self.mediaState[key].items.unshift(Object.assign({}, sourceItem, {
+                    isFavorite: true
+                }));
+                return;
+            }
+
+            self.mediaState[key].items.forEach(function (item) {
+                if (item.id === assetId) {
+                    item.isFavorite = isFavorite;
+                }
+            });
+        });
+
+        Object.keys(this.albumDetails).forEach(function (albumId) {
+            self.albumDetails[albumId].items.forEach(function (item) {
+                if (item.id === assetId) {
+                    item.isFavorite = isFavorite;
+                }
+            });
+        });
+    };
+
+    App.prototype.findMediaItem = function (assetId) {
+        var found = null;
+
+        Object.keys(this.mediaState).some(function (key) {
+            found = findById(this.mediaState[key].items, assetId);
+            return Boolean(found);
+        }, this);
+
+        if (found) {
+            return found;
+        }
+
+        Object.keys(this.albumDetails).some(function (albumId) {
+            found = findById(this.albumDetails[albumId].items, assetId);
+            return Boolean(found);
+        }, this);
+
+        return found;
+    };
+
+    App.prototype.settingsItem = function (title, detail, icon, action, trailing) {
         return [
             '<button class="settings-item focusable" type="button" data-action="' + action + '">',
             '  <span class="settings-icon">' + icon + '</span>',
@@ -1308,7 +1624,7 @@
             '    <strong>' + escapeHtml(title) + '</strong>',
             '    <small>' + escapeHtml(detail) + '</small>',
             '  </span>',
-            '  <span class="chevron">></span>',
+            '  <span class="settings-trailing">' + escapeHtml(trailing || '>') + '</span>',
             '</button>'
         ].join('');
     };
@@ -1341,13 +1657,12 @@
             this.router.navigate('setup');
         } else if (action === 'saveSetup') {
             this.saveSetup();
-        } else if (action === 'clearSettings') {
-            this.settings = namespace.Settings.clear();
-            this.applyAppearance();
-            this.showToast('Saved connection cleared.');
-            this.router.reset('setup');
+        } else if (action === 'resetSettings') {
+            this.resetAppSettings();
         } else if (action === 'selectAccent') {
             this.selectAccent(element.getAttribute('data-accent-id'));
+        } else if (action === 'selectPhotoDisplayMode') {
+            this.selectPhotoDisplayMode(element.getAttribute('data-display-mode'));
         } else if (action === 'retryRecent') {
             this.mediaState.recent = createMediaState();
             this.renderRecent();
@@ -1355,6 +1670,10 @@
         } else if (action === 'retryVideos') {
             this.mediaState.videos = createMediaState();
             this.renderVideos();
+            this.captureFocusables();
+        } else if (action === 'retryFavorites') {
+            this.mediaState.favorites = createMediaState();
+            this.renderFavorites();
             this.captureFocusables();
         } else if (action === 'retryAlbums') {
             this.albumState = {
@@ -1373,6 +1692,19 @@
             }
         } else if (action === 'toggleSortOrder') {
             this.toggleSortOrder(element.getAttribute('data-source') || this.currentMediaSource());
+        } else if (action === 'startSlideshow') {
+            this.startSlideshowFromSource(element.getAttribute('data-source') || this.currentMediaSource());
+        } else if (action === 'viewerSlideshow') {
+            this.toggleViewerSlideshow();
+        } else if (action === 'decreaseSlideshowInterval') {
+            var decreaseInput = document.getElementById('slideshowInterval');
+            this.saveSlideshowInterval((decreaseInput ? decreaseInput.value : this.getSlideshowIntervalSeconds()) - 1);
+        } else if (action === 'increaseSlideshowInterval') {
+            var increaseInput = document.getElementById('slideshowInterval');
+            this.saveSlideshowInterval(Number(increaseInput ? increaseInput.value : this.getSlideshowIntervalSeconds()) + 1);
+        } else if (action === 'saveSlideshowInterval') {
+            var intervalInput = document.getElementById('slideshowInterval');
+            this.saveSlideshowInterval(intervalInput ? intervalInput.value : this.getSlideshowIntervalSeconds());
         } else if (action === 'openDateJump') {
             this.router.navigate('dateJump');
         } else if (action === 'openVideosDateJump') {
@@ -1406,14 +1738,22 @@
             this.closeViewer();
         } else if (action === 'viewerRetry') {
             this.retryViewerImage();
+        } else if (action === 'viewerFavorite') {
+            this.toggleCurrentFavorite();
         } else if (action === 'serverConnection') {
-            this.showToast('Connection editing will be added after media browsing.');
+            this.settings = namespace.Settings.clear();
+            this.setupAuthMode = 'password';
+            this.applyAppearance();
+            this.showToast('Signed out.');
+            this.router.reset('setup');
         } else if (action === 'accountDetails') {
-            this.showToast('Account details will be added after media browsing.');
+            this.showToast(this.settings.userEmail || this.settings.userName || 'No account details saved.');
         } else if (action === 'apiKeySetup') {
-            this.showToast('Advanced API-key setup comes after password login.');
+            this.setupAuthMode = this.setupAuthMode === 'apiKey' ? 'password' : 'apiKey';
+            this.renderSetup();
+            this.captureFocusables();
         } else {
-            this.showToast('This section will connect to Immich in a later slice.');
+            this.showToast('This action is not available here.');
         }
     };
 
@@ -1434,7 +1774,7 @@
     };
 
     App.prototype.toggleSortOrder = function (source) {
-        var stateKey = source === 'videos' ? 'videos' : (source === 'albums' ? 'albums' : (source === 'album' ? 'album' : 'recent'));
+        var stateKey = source === 'videos' ? 'videos' : (source === 'favorites' ? 'favorites' : (source === 'albums' ? 'albums' : (source === 'album' ? 'album' : 'recent')));
         var nextOrder = this.getSortOrder(stateKey) === 'desc' ? 'asc' : 'desc';
         var message = nextOrder === 'desc' ? 'Sorted latest to oldest.' : 'Sorted oldest to latest.';
 
@@ -1466,12 +1806,73 @@
         var serverUrlInput = document.getElementById('serverUrl');
         var emailInput = document.getElementById('email');
         var passwordInput = document.getElementById('password');
+        var apiKeyInput = document.getElementById('apiKey');
+        var isApiKey = this.setupAuthMode === 'apiKey';
         var serverUrl = serverUrlInput ? serverUrlInput.value.trim() : '';
         var email = emailInput ? emailInput.value.trim() : '';
         var password = passwordInput ? passwordInput.value : '';
+        var apiKey = apiKeyInput ? apiKeyInput.value.trim() : '';
 
         if (!serverUrl) {
             this.showToast('Enter a server URL before continuing.');
+            return;
+        }
+
+        if (isApiKey) {
+            if (!apiKey) {
+                this.showToast('Enter an Immich API key.');
+                return;
+            }
+
+            this.isBusy = true;
+            this.settings = Object.assign({}, this.settings, {
+                serverUrl: serverUrl,
+                authMode: 'apiKey',
+                apiKey: apiKey
+            });
+            this.renderSetup();
+            this.captureFocusables();
+
+            var apiClient = this.createClient({
+                serverUrl: serverUrl,
+                authMode: 'apiKey',
+                apiKey: apiKey,
+                accessToken: ''
+            });
+
+            Promise.all([
+                apiClient.validateToken(),
+                apiClient.getServerVersion(),
+                apiClient.getMyUser()
+            ]).then(function (results) {
+                var user = results[2] || {};
+
+                self.settings = namespace.Settings.write(Object.assign({}, self.settings, {
+                    serverUrl: namespace.normalizeServerUrl(serverUrl),
+                    authMode: 'apiKey',
+                    accessToken: '',
+                    apiKey: apiKey,
+                    userId: user.id || '',
+                    userName: user.name || '',
+                    userEmail: user.email || '',
+                    serverVersion: formatServerVersion(results[1])
+                }));
+
+                self.isBusy = false;
+                self.showToast('API key saved.');
+                self.router.reset('recent');
+            }).catch(function (error) {
+                console.warn('Immich API key setup failed', error);
+                self.isBusy = false;
+                self.settings = Object.assign({}, self.settings, {
+                    serverUrl: serverUrl,
+                    authMode: 'apiKey',
+                    apiKey: apiKey
+                });
+                self.renderSetup();
+                self.captureFocusables();
+                self.showToast(formatAuthError(error));
+            });
             return;
         }
 

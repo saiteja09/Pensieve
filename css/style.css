@@ -404,6 +404,13 @@ button {
     -webkit-mask: url("../images/calendar-arrow-up.svg") center / contain no-repeat;
 }
 
+.header-svg-icon {
+    display: block;
+    width: 30px;
+    height: 30px;
+    fill: currentColor;
+}
+
 .page-header p {
     margin: 0;
     color: var(--text-muted);
@@ -676,6 +683,10 @@ button {
     background: #020303;
 }
 
+.viewer-photo-fill {
+    object-fit: cover;
+}
+
 .viewer-video {
     position: absolute;
     inset: 0;
@@ -725,6 +736,16 @@ button {
     position: absolute;
     top: 18px;
     left: 18px;
+    right: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.viewer-action-group {
+    display: flex;
+    align-items: center;
+    gap: 12px;
 }
 
 .viewer-action {
@@ -753,6 +774,44 @@ button {
 .viewer-back {
     width: 58px;
     height: 58px;
+}
+
+.viewer-favorite {
+    width: 58px;
+    height: 58px;
+}
+
+.viewer-slideshow {
+    width: 58px;
+    height: 58px;
+}
+
+.viewer-slideshow svg {
+    width: 32px;
+    height: 32px;
+    fill: currentColor;
+    stroke: none;
+}
+
+.heart-icon {
+    display: block;
+    width: 30px;
+    height: 30px;
+    fill: transparent;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    overflow: visible;
+}
+
+.viewer-favorite.active {
+    color: var(--primary);
+}
+
+.viewer-favorite.active .heart-icon,
+.media-favorite-badge .heart-icon {
+    fill: currentColor;
 }
 
 .viewer-edge {
@@ -810,6 +869,9 @@ button {
     top: 16px;
     right: 16px;
     z-index: 2;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     padding: 6px 9px;
     border-radius: 4px;
     background: #020408;
@@ -818,12 +880,72 @@ button {
     font-weight: 900;
 }
 
+.media-video-badge {
+    width: 34px;
+    height: 28px;
+    padding: 0;
+}
+
+.media-video-badge svg {
+    width: 19px;
+    height: 19px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
 .timeline-grid .media-badge {
     top: 8px;
     right: 8px;
     padding: 4px 7px;
     border-radius: 4px;
     font-size: 11px;
+}
+
+.timeline-grid .media-video-badge {
+    width: 28px;
+    height: 24px;
+    padding: 0;
+}
+
+.timeline-grid .media-video-badge svg {
+    width: 16px;
+    height: 16px;
+}
+
+.media-favorite-badge {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    z-index: 4;
+    display: flex;
+    width: 30px;
+    height: 30px;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    background: rgba(5, 8, 12, 0.68);
+    color: var(--primary);
+}
+
+.media-favorite-badge .heart-icon {
+    width: 17px;
+    height: 17px;
+    transform: translateY(1px);
+}
+
+.timeline-grid .media-favorite-badge {
+    top: 8px;
+    left: 8px;
+    width: 26px;
+    height: 26px;
+}
+
+.timeline-grid .media-favorite-badge .heart-icon {
+    width: 14px;
+    height: 14px;
 }
 
 .filter-row {
@@ -896,17 +1018,17 @@ button {
 }
 
 .settings-canvas {
-    max-width: 1300px;
+    max-width: 1120px;
 }
 
 .settings-list {
     display: flex;
     flex-direction: column;
-    gap: 22px;
+    gap: 12px;
 }
 
 .settings-section {
-    padding: 26px 30px 30px;
+    padding: 18px 20px;
     border: 2px solid transparent;
     border-radius: 8px;
     background: var(--surface);
@@ -917,34 +1039,34 @@ button {
     align-items: baseline;
     justify-content: space-between;
     gap: 24px;
-    margin-bottom: 22px;
+    margin-bottom: 14px;
 }
 
 .settings-section-header h2 {
     margin: 0;
-    font-size: 34px;
+    font-size: 26px;
     line-height: 1;
 }
 
 .settings-section-header p {
     margin: 0;
     color: var(--text-muted);
-    font-size: 22px;
+    font-size: 18px;
     font-weight: 700;
 }
 
 .palette-grid {
     display: grid;
     grid-template-columns: repeat(5, minmax(0, 1fr));
-    gap: 14px;
+    gap: 10px;
 }
 
 .palette-option {
     display: flex;
     align-items: center;
-    gap: 14px;
-    min-height: 76px;
-    padding: 0 18px;
+    gap: 12px;
+    min-height: 52px;
+    padding: 0 14px;
     border: 2px solid transparent;
     border-radius: 8px;
     background: #101826;
@@ -960,43 +1082,143 @@ button {
 }
 
 .palette-swatch {
-    width: 34px;
-    height: 34px;
+    width: 26px;
+    height: 26px;
     border: 3px solid rgba(255, 255, 255, 0.82);
     border-radius: 999px;
     background: linear-gradient(135deg, var(--swatch-color), var(--swatch-strong));
 }
 
 .palette-label {
-    font-size: 22px;
+    font-size: 18px;
     font-weight: 900;
+}
+
+.slideshow-interval-row {
+    display: flex;
+    align-items: flex-end;
+    gap: 10px;
+}
+
+.interval-step {
+    width: 52px;
+    height: 52px;
+    border: 2px solid transparent;
+    border-radius: 8px;
+    background: #101826;
+    color: var(--text);
+    font-size: 28px;
+    font-weight: 900;
+    appearance: none;
+}
+
+.interval-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    color: var(--text-muted);
+    font-size: 14px;
+    font-weight: 900;
+    text-transform: uppercase;
+}
+
+.interval-input {
+    width: 96px;
+    height: 52px;
+    padding: 0 14px;
+    border: 2px solid transparent;
+    border-radius: 8px;
+    background: #101826;
+    color: var(--text);
+    font-size: 24px;
+    font-weight: 900;
+    appearance: textfield;
+}
+
+.interval-input::-webkit-outer-spin-button,
+.interval-input::-webkit-inner-spin-button {
+    margin: 0;
+    appearance: none;
+}
+
+.slideshow-settings .compact-action {
+    min-width: 132px;
+    min-height: 52px;
+    padding: 0 20px;
+    font-size: 22px;
+}
+
+.segmented-control {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.segmented-option {
+    display: flex;
+    min-height: 68px;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 4px;
+    padding: 0 18px;
+    border: 2px solid transparent;
+    border-radius: 8px;
+    background: #101826;
+    color: var(--text);
+    text-align: left;
+    appearance: none;
+}
+
+.segmented-option.selected {
+    border-color: var(--primary);
+    background: #151d28;
+}
+
+.segmented-option strong {
+    font-size: 22px;
+    line-height: 1;
+}
+
+.segmented-option small {
+    color: var(--text-muted);
+    font-size: 16px;
+    font-weight: 800;
 }
 
 .settings-item {
     display: flex;
     align-items: center;
-    gap: 28px;
+    gap: 16px;
     width: 100%;
-    min-height: 110px;
-    padding: 24px 30px;
+    min-height: 76px;
+    padding: 14px 16px;
     border: 2px solid transparent;
     border-radius: 8px;
-    background: var(--surface);
+    background: #101826;
     color: var(--text);
     text-align: left;
     appearance: none;
+}
+
+.settings-list > .settings-item {
+    background: var(--surface);
+}
+
+.settings-section .settings-item + .settings-item {
+    margin-top: 10px;
 }
 
 .settings-icon {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 64px;
-    height: 64px;
+    width: 44px;
+    height: 44px;
     border-radius: 8px;
-    background: #101826;
+    background: rgba(2, 4, 8, 0.35);
     color: var(--primary);
-    font-size: 18px;
+    font-size: 13px;
     font-weight: 900;
 }
 
@@ -1004,16 +1226,29 @@ button {
     display: flex;
     flex: 1;
     flex-direction: column;
-    gap: 6px;
+    gap: 4px;
+    min-width: 0;
 }
 
 .settings-copy strong {
-    font-size: 34px;
+    font-size: 24px;
+    line-height: 1.1;
 }
 
 .settings-copy small {
     color: var(--text-muted);
-    font-size: 22px;
+    overflow: hidden;
+    font-size: 17px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.settings-trailing {
+    min-width: 58px;
+    color: var(--primary);
+    font-size: 16px;
+    font-weight: 900;
+    text-align: right;
 }
 
 .chevron {
@@ -1174,9 +1409,12 @@ button {
 .settings-item:focus,
 .filter-chip:focus,
 .header-icon-action:focus,
+.interval-step:focus,
+.interval-input:focus,
 .jump-chip:focus,
 .palette-option:focus,
 .primary-action:focus,
+.segmented-option:focus,
 .text-action:focus,
 .rail-button:focus {
     outline: none;
@@ -1190,6 +1428,7 @@ button {
 .album-grid:has(.album-card:focus) .album-card:not(:focus),
 .settings-list:has(.settings-item:focus) .settings-item:not(:focus),
 .palette-grid:has(.palette-option:focus) .palette-option:not(:focus),
+.segmented-control:has(.segmented-option:focus) .segmented-option:not(:focus),
 .filter-row:has(.filter-chip:focus) .filter-chip:not(:focus),
 .jump-grid:has(.jump-chip:focus) .jump-chip:not(:focus) {
     opacity: 0.8;
