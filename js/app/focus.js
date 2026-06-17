@@ -138,9 +138,15 @@
         } else if (direction === 'right') {
             next = this.findRightTarget(current);
         } else if (direction === 'up') {
-            next -= columns;
+            next = this.findVerticalGridTarget(current, 'up');
+            if (next < 0) {
+                next = current.closest('.timeline-grid, .media-grid, .album-grid') ? this.focusIndex : this.focusIndex - columns;
+            }
         } else if (direction === 'down') {
-            next += columns;
+            next = this.findVerticalGridTarget(current, 'down');
+            if (next < 0) {
+                next = current.closest('.timeline-grid, .media-grid, .album-grid') ? this.focusIndex : this.focusIndex + columns;
+            }
         }
 
         if (next < 0 || next >= this.focusables.length) {
@@ -154,6 +160,11 @@
     App.prototype.findLeftTarget = function (current) {
         if (current.classList.contains('rail-button')) {
             return this.focusIndex;
+        }
+
+        var gridTarget = this.findPreviousGridTarget(current);
+        if (gridTarget >= 0) {
+            return gridTarget;
         }
 
         var currentRow = current.getBoundingClientRect().top;
@@ -173,6 +184,103 @@
         });
 
         return closest >= 0 ? closest : this.focusIndex - 1;
+    };
+
+    App.prototype.findPreviousGridTarget = function (current) {
+        var grid = current.closest('.timeline-grid, .media-grid, .album-grid');
+        var currentRect;
+        var closest = -1;
+        var closestDistance = Infinity;
+
+        if (!grid) {
+            return -1;
+        }
+
+        currentRect = current.getBoundingClientRect();
+
+        this.focusables.forEach(function (element, index) {
+            var rect;
+            var distance;
+
+            if (index === this.focusIndex || element.closest('.timeline-grid, .media-grid, .album-grid') !== grid) {
+                return;
+            }
+
+            rect = element.getBoundingClientRect();
+            if (!isSameFocusRow(currentRect, rect) || rect.right > currentRect.left + 1) {
+                return;
+            }
+
+            distance = currentRect.left - rect.right;
+            if (distance < closestDistance) {
+                closest = index;
+                closestDistance = distance;
+            }
+        }, this);
+
+        return closest;
+    };
+
+    App.prototype.findVerticalGridTarget = function (current, direction) {
+        var grid = current.closest('.timeline-grid, .media-grid, .album-grid');
+        var scope = current.closest('.timeline-canvas, .albums-canvas, .content-canvas');
+        var currentRect;
+        var currentCenterX;
+        var currentCenterY;
+        var closest = -1;
+        var closestScore = Infinity;
+        var gridClass;
+
+        if (!grid) {
+            return -1;
+        }
+
+        gridClass = grid.classList.contains('album-grid') ? 'album-grid' : (grid.classList.contains('timeline-grid') ? 'timeline-grid' : 'media-grid');
+        currentRect = current.getBoundingClientRect();
+        currentCenterX = rectCenterX(currentRect);
+        currentCenterY = rectCenterY(currentRect);
+
+        this.focusables.forEach(function (element, index) {
+            var elementGrid = element.closest('.timeline-grid, .media-grid, .album-grid');
+            var rect;
+            var centerY;
+            var verticalGap;
+            var horizontalDistance;
+            var score;
+
+            if (index === this.focusIndex || !elementGrid || !elementGrid.classList.contains(gridClass)) {
+                return;
+            }
+
+            if (scope && !scope.contains(element)) {
+                return;
+            }
+
+            rect = element.getBoundingClientRect();
+            centerY = rectCenterY(rect);
+
+            if (direction === 'up') {
+                if (centerY >= currentCenterY - 4) {
+                    return;
+                }
+                verticalGap = Math.max(0, currentRect.top - rect.bottom);
+            } else {
+                if (centerY <= currentCenterY + 4) {
+                    return;
+                }
+                verticalGap = Math.max(0, rect.top - currentRect.bottom);
+            }
+
+            horizontalDistance = Math.abs(rectCenterX(rect) - currentCenterX);
+            score = (verticalGap * 1000) + horizontalDistance;
+
+            if (score < closestScore) {
+                closest = index;
+                closestScore = score;
+            }
+        }, this);
+
+        return closest;
     };
 
     App.prototype.findRightTarget = function (current) {
@@ -230,6 +338,21 @@
 
         return 1;
     };
+
+    function isSameFocusRow(firstRect, secondRect) {
+        var overlap = Math.min(firstRect.bottom, secondRect.bottom) - Math.max(firstRect.top, secondRect.top);
+        var minimumHeight = Math.min(firstRect.height, secondRect.height);
+
+        return overlap > minimumHeight * 0.5;
+    }
+
+    function rectCenterX(rect) {
+        return rect.left + (rect.width / 2);
+    }
+
+    function rectCenterY(rect) {
+        return rect.top + (rect.height / 2);
+    }
 
     App.prototype.handleRemoteKey = function (event) {
         if (this.logoutConfirmVisible) {

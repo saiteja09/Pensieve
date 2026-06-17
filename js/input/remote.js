@@ -56,6 +56,10 @@
         return target.isContentEditable || tagName === 'INPUT' || tagName === 'TEXTAREA';
     }
 
+    function shouldKeepTextEditingKey(target, key) {
+        return isTextEditingTarget(target) && key !== 'back' && key !== 'up' && key !== 'down';
+    }
+
     function registerTizenKeys() {
         if (!global.tizen || !global.tizen.tvinputdevice) {
             return;
@@ -80,7 +84,7 @@
         function handleKeyDown(event) {
             var key = normalizeKey(event);
 
-            if (isTextEditingTarget(event.target) && key !== 'back') {
+            if (shouldKeepTextEditingKey(event.target, key)) {
                 return;
             }
 
