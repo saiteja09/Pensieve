@@ -10,6 +10,7 @@
         userId: '',
         userName: '',
         userEmail: '',
+        userProfileImagePath: '',
         serverVersion: '',
         appearanceAccentId: 'mint',
         slideshowIntervalSeconds: 10,

@@ -15,6 +15,16 @@
         var pendingViewerAction = this.pendingViewerAction;
         var pendingAccentId = this.pendingAccentId;
 
+        if (this.logoutConfirmVisible) {
+            var cancelLogoutIndex = this.focusables.findIndex(function (element) {
+                return element.getAttribute('data-action') === 'cancelLogout';
+            });
+
+            if (cancelLogoutIndex >= 0) {
+                return cancelLogoutIndex;
+            }
+        }
+
         if (pendingViewerAction) {
             var pendingActionIndex = this.focusables.findIndex(function (element) {
                 return element.getAttribute('data-action') === pendingViewerAction;
@@ -45,6 +55,16 @@
             this.pendingAccentId = null;
             if (pendingAccentIndex >= 0) {
                 return pendingAccentIndex;
+            }
+        }
+
+        if (this.router.current && this.router.current.name === 'settings') {
+            var settingsIndex = this.focusables.findIndex(function (element) {
+                return !element.classList.contains('rail-button') && element.getAttribute('data-action') !== 'serverConnection';
+            });
+
+            if (settingsIndex >= 0) {
+                return settingsIndex;
             }
         }
 
@@ -212,6 +232,38 @@
     };
 
     App.prototype.handleRemoteKey = function (event) {
+        if (this.logoutConfirmVisible) {
+            if (event.key === 'left' || event.key === 'right') {
+                var modalActions = this.focusables.filter(function (element) {
+                    var action = element.getAttribute('data-action');
+                    return action === 'cancelLogout' || action === 'confirmLogout';
+                });
+                var currentAction = this.focusables[this.focusIndex] ? this.focusables[this.focusIndex].getAttribute('data-action') : '';
+                var nextAction = currentAction === 'cancelLogout' ? 'confirmLogout' : 'cancelLogout';
+                var nextIndex = this.focusables.findIndex(function (element) {
+                    return element.getAttribute('data-action') === nextAction;
+                });
+
+                if (modalActions.length && nextIndex >= 0) {
+                    this.focusIndex = nextIndex;
+                    this.applyFocus();
+                }
+                return;
+            }
+
+            if (event.key === 'enter') {
+                this.activate(this.focusables[this.focusIndex]);
+                return;
+            }
+
+            if (event.key === 'back') {
+                this.hideLogoutConfirm();
+                return;
+            }
+
+            return;
+        }
+
         if (this.router.current && this.router.current.name === 'viewer') {
             var viewerItem = this.currentViewerItem ? this.currentViewerItem() : null;
             var isVideo = viewerItem && viewerItem.type === 'video';

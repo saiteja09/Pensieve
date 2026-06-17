@@ -64,12 +64,17 @@
         this.viewerVideoUrls = {};
         this.viewerVideoLoads = {};
         this.viewerVideoErrors = {};
+        this.profileImageUrl = '';
+        this.profileImageUserId = '';
+        this.profileImageLoad = '';
+        this.profileImageError = false;
         this.viewerOverlayVisible = true;
         this.viewerOverlayTimer = null;
         this.viewerSource = 'recent';
         this.slideshowActive = false;
         this.slideshowSource = 'recent';
         this.slideshowTimer = null;
+        this.logoutConfirmVisible = false;
         this.pendingViewerAction = null;
         this.pendingFocusAssetId = null;
         this.pendingScrollTop = null;
@@ -116,7 +121,8 @@
                 serverVersion: formatServerVersion(version),
                 userId: user.id || '',
                 userName: user.name || '',
-                userEmail: user.email || ''
+                userEmail: user.email || '',
+                userProfileImagePath: user.profileImagePath || ''
             }));
             self.router.reset('recent');
         }).catch(function (error) {
@@ -194,28 +200,28 @@
             '    <div class="field">',
             '      <label for="serverUrl">Server</label>',
             '      <div class="input-shell">',
-            '        <span class="input-icon">URL</span>',
+            '        <span class="input-icon input-icon-mask" style="-webkit-mask-image: url(\'images/settings/server.svg\'); mask-image: url(\'images/settings/server.svg\');" aria-hidden="true"></span>',
             '        <input id="serverUrl" class="text-input focusable" type="text" inputmode="url" value="' + escapeAttr(this.settings.serverUrl) + '" placeholder="https://immich.example.com" />',
             '      </div>',
             '    </div>',
             isApiKey ? '' : '    <div class="field">',
             isApiKey ? '' : '      <label for="email">Email</label>',
             isApiKey ? '' : '      <div class="input-shell">',
-            isApiKey ? '' : '        <span class="input-icon">@</span>',
+            isApiKey ? '' : '        <span class="input-icon input-icon-mask" style="-webkit-mask-image: url(\'images/settings/user.svg\'); mask-image: url(\'images/settings/user.svg\');" aria-hidden="true"></span>',
             isApiKey ? '' : '        <input id="email" class="text-input focusable" type="email" value="' + escapeAttr(this.settings.userEmail) + '" placeholder="you@example.com" />',
             isApiKey ? '' : '      </div>',
             isApiKey ? '' : '    </div>',
             isApiKey ? '' : '    <div class="field">',
             isApiKey ? '' : '      <label for="password">Password</label>',
             isApiKey ? '' : '      <div class="input-shell">',
-            isApiKey ? '' : '        <span class="input-icon">PWD</span>',
+            isApiKey ? '' : '        <span class="input-icon input-icon-mask" style="-webkit-mask-image: url(\'images/settings/user-key.svg\'); mask-image: url(\'images/settings/user-key.svg\');" aria-hidden="true"></span>',
             isApiKey ? '' : '        <input id="password" class="text-input focusable" type="password" placeholder="Immich password" />',
             isApiKey ? '' : '      </div>',
             isApiKey ? '' : '    </div>',
             isApiKey ? '    <div class="field">' : '',
             isApiKey ? '      <label for="apiKey">API key</label>' : '',
             isApiKey ? '      <div class="input-shell">' : '',
-            isApiKey ? '        <span class="input-icon">KEY</span>' : '',
+            isApiKey ? '        <span class="input-icon input-icon-mask" style="-webkit-mask-image: url(\'images/settings/key.svg\'); mask-image: url(\'images/settings/key.svg\');" aria-hidden="true"></span>' : '',
             isApiKey ? '        <input id="apiKey" class="text-input focusable" type="password" value="' + escapeAttr(this.settings.apiKey) + '" placeholder="Immich API key" />' : '',
             isApiKey ? '      </div>' : '',
             isApiKey ? '    </div>' : '',
@@ -874,13 +880,13 @@
             '        <h2>Connection</h2>',
             '        <p>' + escapeHtml(version) + '</p>',
             '      </div>',
-            this.settingsItem('Server', server, 'DNS', 'serverConnection', 'Logout'),
-            this.settingsItem('Account', account, 'USR', 'accountDetails', 'Info'),
+            this.settingsItem('Server', server, 'images/settings/server.svg', 'serverConnection', 'Logout', 'danger'),
+            this.settingsItem('Account', account, 'images/settings/user.svg', 'accountDetails', 'Info'),
             '    </section>',
             this.slideshowSettings(),
             this.displaySettings(),
             this.appearanceSettings(),
-            this.settingsItem('Reset settings', 'Restore app preferences without signing out.', 'RST', 'resetSettings', 'Reset'),
+            this.settingsItem('Reset settings', 'Restore app preferences without signing out.', 'images/settings/reset.svg', 'resetSettings', 'Reset'),
             '  </div>',
             '</main>'
         ].join(''));
@@ -987,6 +993,7 @@
         var nextMode = mode === 'fill' ? 'fill' : 'fit';
         var label = nextMode === 'fill' ? 'Fill screen' : 'Fit to screen';
 
+        this.logoutConfirmVisible = false;
         this.settings = namespace.Settings.write(Object.assign({}, this.settings, {
             photoDisplayMode: nextMode
         }));
@@ -996,6 +1003,7 @@
     };
 
     App.prototype.resetAppSettings = function () {
+        this.logoutConfirmVisible = false;
         this.settings = namespace.Settings.write(Object.assign({}, this.settings, {
             appearanceAccentId: namespace.Settings.defaults.appearanceAccentId,
             slideshowIntervalSeconds: namespace.Settings.defaults.slideshowIntervalSeconds,
@@ -1006,6 +1014,31 @@
         this.renderSettings();
         this.captureFocusables();
         this.showToast('App settings reset.');
+    };
+
+    App.prototype.showLogoutConfirm = function () {
+        this.logoutConfirmVisible = true;
+        this.renderSettings();
+        this.captureFocusables();
+    };
+
+    App.prototype.hideLogoutConfirm = function () {
+        this.logoutConfirmVisible = false;
+        this.renderSettings();
+        this.captureFocusables();
+    };
+
+    App.prototype.confirmLogout = function () {
+        this.logoutConfirmVisible = false;
+        this.profileImageUrl = '';
+        this.profileImageUserId = '';
+        this.profileImageLoad = '';
+        this.profileImageError = false;
+        this.settings = namespace.Settings.clear();
+        this.setupAuthMode = 'password';
+        this.applyAppearance();
+        this.router.reset('setup');
+        this.showToast('Signed out.');
     };
 
     App.prototype.getSlideshowIntervalSeconds = function () {
@@ -1025,6 +1058,7 @@
     App.prototype.saveSlideshowInterval = function (value) {
         var interval = this.clampSlideshowInterval(value);
 
+        this.logoutConfirmVisible = false;
         this.settings = namespace.Settings.write(Object.assign({}, this.settings, {
             slideshowIntervalSeconds: interval
         }));
@@ -1036,6 +1070,7 @@
     App.prototype.selectAccent = function (accentId) {
         var palette = this.getAccentPalette(accentId);
 
+        this.logoutConfirmVisible = false;
         this.settings = namespace.Settings.write(Object.assign({}, this.settings, {
             appearanceAccentId: palette.id
         }));
@@ -1052,8 +1087,24 @@
             this.navRail(activeRoute),
             this.topBar(),
             content,
+            this.logoutConfirmVisible ? this.logoutConfirmDialog() : '',
             '<div id="toast" class="toast"></div>',
             '</section>'
+        ].join('');
+    };
+
+    App.prototype.logoutConfirmDialog = function () {
+        return [
+            '<div class="modal-scrim" role="presentation">',
+            '  <section class="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="logoutConfirmTitle">',
+            '    <h2 id="logoutConfirmTitle">Log out?</h2>',
+            '    <p>You will need to sign in again to browse your Immich library on this TV.</p>',
+            '    <div class="confirm-actions">',
+            '      <button class="secondary-action focusable" type="button" data-action="cancelLogout">Cancel</button>',
+            '      <button class="danger-action focusable" type="button" data-action="confirmLogout">Log out</button>',
+            '    </div>',
+            '  </section>',
+            '</div>'
         ].join('');
     };
 
@@ -1078,22 +1129,56 @@
     };
 
     App.prototype.topBar = function () {
-        var connected = namespace.Settings.hasConnection(this.settings);
         var initial = (this.settings.userName || this.settings.userEmail || 'P').charAt(0).toUpperCase();
-        var connectionTitle = connected ? 'Connected to Immich' : 'Immich offline';
-        var version = this.settings.serverVersion || 'Sync pending';
+        var title = this.settings.userEmail || this.settings.userName || 'Pensieve';
+        var image = this.profileImageUrl ? '<img class="avatar-image" src="' + escapeAttr(this.profileImageUrl) + '" alt="" />' : escapeHtml(initial);
+
+        this.loadUserProfileImage();
+
         return [
             '<header class="top-bar">',
-            '  <div class="status-cluster">',
-            '    <span class="connection-indicator ' + (connected ? 'connected' : 'offline') + '" title="' + escapeAttr(connectionTitle) + '" aria-label="' + escapeAttr(connectionTitle) + '">',
-            '      <span class="connection-dot"></span>',
-            '      <span class="connection-cloud" aria-hidden="true"></span>',
-            '    </span>',
-            '    <span class="version-pill" title="Immich server version">' + escapeHtml(version) + '</span>',
-            '  </div>',
-            '  <div class="avatar" title="' + escapeAttr(this.settings.userEmail || this.settings.userName || 'Pensieve') + '">' + escapeHtml(initial) + '</div>',
+            '  <div class="avatar" title="' + escapeAttr(title) + '" aria-label="' + escapeAttr(title) + '">' + image + '</div>',
             '</header>'
         ].join('');
+    };
+
+    App.prototype.loadUserProfileImage = function () {
+        var self = this;
+        var userId = this.settings.userId;
+
+        if (this.profileImageUserId && this.profileImageUserId !== userId) {
+            this.profileImageUrl = '';
+            this.profileImageUserId = '';
+            this.profileImageLoad = '';
+            this.profileImageError = false;
+        }
+
+        if (!userId || this.profileImageUrl || this.profileImageLoad === 'loading' || this.profileImageError || !namespace.Settings.hasConnection(this.settings)) {
+            return;
+        }
+
+        this.profileImageLoad = 'loading';
+        this.createClient().getUserProfileImageBlob(userId).then(function (blob) {
+            self.profileImageUrl = global.URL.createObjectURL(blob);
+            self.profileImageUserId = userId;
+            self.profileImageLoad = 'loaded';
+            self.profileImageError = false;
+            self.updateTopBarAvatar();
+        }).catch(function (error) {
+            console.warn('Profile image load failed', error);
+            self.profileImageLoad = '';
+            self.profileImageError = true;
+        });
+    };
+
+    App.prototype.updateTopBarAvatar = function () {
+        var avatar = this.root.querySelector('.top-bar .avatar');
+
+        if (!avatar || !this.profileImageUrl) {
+            return;
+        }
+
+        avatar.innerHTML = '<img class="avatar-image" src="' + escapeAttr(this.profileImageUrl) + '" alt="" />';
     };
 
     App.prototype.pageHeader = function (title, subtitle, actions) {
@@ -1616,10 +1701,13 @@
         return found;
     };
 
-    App.prototype.settingsItem = function (title, detail, icon, action, trailing) {
+    App.prototype.settingsItem = function (title, detail, icon, action, trailing, tone) {
+        var iconMarkup = /\.svg$/i.test(icon) ? '<span class="settings-icon-mask" style="-webkit-mask-image: url(\'' + escapeAttr(icon) + '\'); mask-image: url(\'' + escapeAttr(icon) + '\');" aria-hidden="true"></span>' : escapeHtml(icon);
+        var toneClass = tone ? ' settings-item-' + tone : '';
+
         return [
-            '<button class="settings-item focusable" type="button" data-action="' + action + '">',
-            '  <span class="settings-icon">' + icon + '</span>',
+            '<button class="settings-item focusable' + toneClass + '" type="button" data-action="' + action + '">',
+            '  <span class="settings-icon">' + iconMarkup + '</span>',
             '  <span class="settings-copy">',
             '    <strong>' + escapeHtml(title) + '</strong>',
             '    <small>' + escapeHtml(detail) + '</small>',
@@ -1741,11 +1829,11 @@
         } else if (action === 'viewerFavorite') {
             this.toggleCurrentFavorite();
         } else if (action === 'serverConnection') {
-            this.settings = namespace.Settings.clear();
-            this.setupAuthMode = 'password';
-            this.applyAppearance();
-            this.showToast('Signed out.');
-            this.router.reset('setup');
+            this.showLogoutConfirm();
+        } else if (action === 'cancelLogout') {
+            this.hideLogoutConfirm();
+        } else if (action === 'confirmLogout') {
+            this.confirmLogout();
         } else if (action === 'accountDetails') {
             this.showToast(this.settings.userEmail || this.settings.userName || 'No account details saved.');
         } else if (action === 'apiKeySetup') {
@@ -1855,6 +1943,7 @@
                     userId: user.id || '',
                     userName: user.name || '',
                     userEmail: user.email || '',
+                    userProfileImagePath: user.profileImagePath || '',
                     serverVersion: formatServerVersion(results[1])
                 }));
 
@@ -1928,6 +2017,7 @@
                 userId: result.user.id || result.loginResponse.userId || '',
                 userName: result.user.name || result.loginResponse.name || '',
                 userEmail: result.user.email || result.loginResponse.userEmail || email,
+                userProfileImagePath: result.user.profileImagePath || '',
                 serverVersion: formatServerVersion(result.version)
             }));
 

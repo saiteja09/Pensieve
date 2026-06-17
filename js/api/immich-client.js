@@ -48,6 +48,10 @@
         return this.request('/users/me');
     };
 
+    ImmichClient.prototype.getUserProfileImageBlob = function (userId) {
+        return this.requestBlob('/users/' + encodeURIComponent(userId) + '/profile-image');
+    };
+
     ImmichClient.prototype.getAlbums = function () {
         return this.request('/albums');
     };
