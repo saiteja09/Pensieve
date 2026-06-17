@@ -45,6 +45,12 @@
         this.albumDetails = {};
         this.currentAlbumId = '';
         this.viewerAlbumId = '';
+        this.mediaSortOrder = {
+            recent: 'desc',
+            videos: 'desc',
+            albums: 'desc',
+            album: 'desc'
+        };
         this.thumbnailUrls = {};
         this.thumbnailLoads = {};
         this.thumbnailErrors = {};
@@ -234,8 +240,9 @@
             return;
         }
 
-        this.renderRecentTimeline(state.items);
-        this.loadVisibleThumbnails(state.items);
+        var sortedItems = this.sortMediaItems(state.items, 'recent');
+        this.renderRecentTimeline(sortedItems);
+        this.loadVisibleThumbnails(sortedItems);
     };
 
     App.prototype.renderVideos = function () {
@@ -265,20 +272,21 @@
             return;
         }
 
-        this.renderMediaTimeline('videos', 'Videos', this.mediaSubtitle('videos'), this.mediaToolbar('videos'), state.items);
-        this.loadVisibleThumbnails(state.items);
+        var sortedItems = this.sortMediaItems(state.items, 'videos');
+        this.renderMediaTimeline('videos', 'Videos', this.mediaSubtitle('videos'), this.mediaToolbar('videos'), sortedItems, this.timelineHeaderActions('videos'));
+        this.loadVisibleThumbnails(sortedItems);
     };
 
     App.prototype.renderRecentTimeline = function (items) {
-        this.renderMediaTimeline('recent', 'Library', this.mediaSubtitle('recent'), this.mediaToolbar('recent'), items);
+        this.renderMediaTimeline('recent', 'Library', this.mediaSubtitle('recent'), this.mediaToolbar('recent'), items, this.timelineHeaderActions('recent'));
     };
 
-    App.prototype.renderMediaTimeline = function (routeName, title, subtitle, toolbar, items) {
+    App.prototype.renderMediaTimeline = function (routeName, title, subtitle, toolbar, items, headerActions) {
         var groups = groupMediaByDate(items);
 
         this.root.innerHTML = this.shell(routeName, [
             '<main class="content-canvas timeline-canvas">',
-            this.pageHeader(title, subtitle),
+            this.pageHeader(title, subtitle, headerActions),
             toolbar,
             groups.map(function (group) {
                 return [
@@ -305,15 +313,133 @@
 
     App.prototype.mediaToolbar = function (source) {
         var filter = this.mediaState[source].filter;
-        var jumpAction = source === 'videos' ? 'openVideosDateJump' : 'openDateJump';
         var clearAction = source === 'videos' ? 'clearVideosFilter' : 'clearRecentFilter';
+        var controls = [
+            filter ? '  <button class="filter-chip focusable" type="button" data-action="' + clearAction + '">Clear filter</button>' : ''
+        ].join('');
+
+        if (!controls) {
+            return '';
+        }
+
         return [
             '<div class="timeline-toolbar">',
-            '  <button class="filter-chip focusable" type="button" data-action="' + jumpAction + '">Jump to date</button>',
-            filter ? '  <button class="filter-chip focusable" type="button" data-action="' + clearAction + '">Clear filter</button>' : '',
+            controls,
             '</div>'
         ].join('');
     };
+
+    App.prototype.timelineHeaderActions = function (source) {
+        return this.sortHeaderAction(source) + this.dateJumpHeaderAction(source);
+    };
+
+    App.prototype.dateJumpHeaderAction = function (source) {
+        var action = source === 'videos' ? 'openVideosDateJump' : 'openDateJump';
+        return [
+            '<button class="header-icon-action focusable" type="button" data-action="' + action + '" aria-label="Jump to date">',
+            '  <span class="calendar-search-icon" aria-hidden="true"></span>',
+            '</button>'
+        ].join('');
+    };
+
+    App.prototype.sortHeaderAction = function (source) {
+        var order = this.getSortOrder(source);
+        var nextLabel = order === 'desc' ? 'Sort oldest to latest' : 'Sort latest to oldest';
+        var iconClass = order === 'desc' ? 'calendar-arrow-down-icon' : 'calendar-arrow-up-icon';
+
+        return [
+            '<button class="header-icon-action focusable" type="button" data-action="toggleSortOrder" data-source="' + escapeAttr(source) + '" aria-label="' + escapeAttr(nextLabel) + '">',
+            '  <span class="' + iconClass + '" aria-hidden="true"></span>',
+            '</button>'
+        ].join('');
+    };
+
+    App.prototype.getSortOrder = function (source) {
+        var key = source === 'videos' ? 'videos' : (source === 'albums' ? 'albums' : (source === 'album' ? 'album' : 'recent'));
+        return this.mediaSortOrder[key] === 'asc' ? 'asc' : 'desc';
+    };
+
+    App.prototype.sortMediaItems = function (items, source) {
+        var order = this.getSortOrder(source);
+
+        return items.slice().sort(function (left, right) {
+            var leftTime = mediaTimestamp(left);
+            var rightTime = mediaTimestamp(right);
+
+            if (!leftTime && !rightTime) {
+                return 0;
+            }
+
+            if (!leftTime) {
+                return 1;
+            }
+
+            if (!rightTime) {
+                return -1;
+            }
+
+            if (leftTime === rightTime) {
+                return String(left.id || '').localeCompare(String(right.id || ''));
+            }
+
+            return order === 'asc' ? leftTime - rightTime : rightTime - leftTime;
+        });
+    };
+
+    App.prototype.sortAlbums = function (albums) {
+        var order = this.getSortOrder('albums');
+
+        return albums.slice().sort(function (left, right) {
+            var leftTime = albumLatestTimestamp(left);
+            var rightTime = albumLatestTimestamp(right);
+
+            if (!leftTime && !rightTime) {
+                return String(left.name || '').localeCompare(String(right.name || ''));
+            }
+
+            if (!leftTime) {
+                return 1;
+            }
+
+            if (!rightTime) {
+                return -1;
+            }
+
+            if (leftTime === rightTime) {
+                return String(left.name || '').localeCompare(String(right.name || ''));
+            }
+
+            return order === 'asc' ? leftTime - rightTime : rightTime - leftTime;
+        });
+    };
+
+    function mediaTimestamp(item) {
+        var timestamp = item && item.date ? new Date(item.date).getTime() : 0;
+        return isNaN(timestamp) ? 0 : timestamp;
+    }
+
+    function albumLatestTimestamp(album) {
+        var value = album && (album.latestAssetDate || album.endDate || album.updatedAt || album.startDate);
+        var timestamp = value ? new Date(value).getTime() : 0;
+        return isNaN(timestamp) ? 0 : timestamp;
+    }
+
+    function latestAssetDateFromAssets(assets) {
+        var latestTime = 0;
+        var latestValue = '';
+
+        assets.forEach(function (asset) {
+            var value = asset.localDateTime || asset.fileCreatedAt || asset.createdAt || '';
+            var timestamp = value ? new Date(value).getTime() : 0;
+
+            if (!isNaN(timestamp) && timestamp > latestTime) {
+                latestTime = timestamp;
+                latestValue = value;
+            }
+        });
+
+        return latestValue;
+    }
 
     App.prototype.renderDateJump = function (source) {
         var stateKey = source === 'videos' ? 'videos' : 'recent';
@@ -369,6 +495,7 @@
 
     App.prototype.renderAlbums = function () {
         var state = this.albumState;
+        var sortedAlbums;
 
         if (!state.loaded && !state.loading && !state.error) {
             this.loadAlbums();
@@ -389,16 +516,18 @@
             return;
         }
 
+        sortedAlbums = this.sortAlbums(state.items);
+
         this.root.innerHTML = this.shell('albums', [
             '<main class="content-canvas albums-canvas">',
-            this.pageHeader('Albums', ''),
+            this.pageHeader('Albums', '', this.sortHeaderAction('albums')),
             '  <div class="album-grid">',
-            state.items.map(this.albumTile, this).join(''),
+            sortedAlbums.map(this.albumTile, this).join(''),
             '  </div>',
             '</main>'
         ].join(''));
 
-        this.loadVisibleAlbumThumbnails(state.items);
+        this.loadVisibleAlbumThumbnails(sortedAlbums);
     };
 
     App.prototype.renderAlbum = function (route) {
@@ -435,8 +564,9 @@
             return;
         }
 
-        this.renderMediaTimeline('albums', title, subtitle, this.albumToolbar(), detail.items);
-        this.loadVisibleThumbnails(detail.items);
+        var sortedItems = this.sortMediaItems(detail.items, 'album');
+        this.renderMediaTimeline('albums', title, subtitle, this.albumToolbar(), sortedItems, this.sortHeaderAction('album'));
+        this.loadVisibleThumbnails(sortedItems);
     };
 
     App.prototype.albumTile = function (album) {
@@ -505,6 +635,7 @@
         var assets = Array.isArray(album.assets) ? album.assets : [];
         var firstAsset = assets.length ? assets[0] : null;
         var coverId = album.albumThumbnailAssetId || firstAsset && firstAsset.id || '';
+        var latestAssetDate = album.endDate || latestAssetDateFromAssets(assets) || '';
 
         return {
             id: album.id,
@@ -514,6 +645,7 @@
             shared: Boolean(album.shared),
             startDate: album.startDate || '',
             endDate: album.endDate || '',
+            latestAssetDate: latestAssetDate,
             updatedAt: album.updatedAt || album.modifiedAt || '',
             thumbnailUrl: coverId && this.thumbnailUrls[coverId] ? this.thumbnailUrls[coverId] : ''
         };
@@ -571,6 +703,7 @@
             detail.loaded = true;
             detail.loading = false;
             self.albumDetails[albumId] = detail;
+            self.updateAlbumSummary(normalized);
             self.renderRoute({ name: 'album', params: { albumId: albumId } });
         }).catch(function (error) {
             console.warn('Album load failed', albumId, error);
@@ -580,6 +713,21 @@
             self.renderRoute({ name: 'album', params: { albumId: albumId } });
             self.showToast(formatMediaError(error));
         });
+    };
+
+    App.prototype.updateAlbumSummary = function (album) {
+        var index;
+
+        if (!album || !album.id) {
+            return;
+        }
+
+        for (index = 0; index < this.albumState.items.length; index += 1) {
+            if (this.albumState.items[index].id === album.id) {
+                this.albumState.items[index] = Object.assign({}, this.albumState.items[index], album);
+                return;
+            }
+        }
     };
 
     App.prototype.loadVisibleAlbumThumbnails = function (albums) {
@@ -782,10 +930,15 @@
         ].join('');
     };
 
-    App.prototype.pageHeader = function (title, subtitle) {
+    App.prototype.pageHeader = function (title, subtitle, actions) {
+        var headerClass = 'page-header' + (subtitle ? ' has-subtitle' : '') + (actions ? ' has-actions' : '');
+
         return [
-            '<header class="page-header">',
-            '  <h1>' + escapeHtml(title) + '</h1>',
+            '<header class="' + headerClass + '">',
+            '  <div class="page-title-row">',
+            '    <h1>' + escapeHtml(title) + '</h1>',
+            actions ? '    <div class="page-header-actions">' + actions + '</div>' : '',
+            '  </div>',
             subtitle ? '  <p>' + escapeHtml(subtitle) + '</p>' : '',
             '</header>'
         ].join('');
@@ -835,7 +988,7 @@
         this.createClient().searchAssets({
             page: page,
             size: 60,
-            order: 'desc',
+            order: this.getSortOrder('recent'),
             visibility: 'timeline',
             withExif: true
         }).then(function (response) {
@@ -893,7 +1046,7 @@
         this.createClient().searchAssets({
             page: page,
             size: 60,
-            order: 'desc',
+            order: this.getSortOrder('videos'),
             visibility: 'timeline',
             type: 'VIDEO',
             withExif: true
@@ -999,10 +1152,10 @@
         var source = this.currentMediaSource();
 
         if (source === 'album') {
-            return this.getAlbumDetail(this.currentAlbumId).items;
+            return this.sortMediaItems(this.getAlbumDetail(this.currentAlbumId).items, 'album');
         }
 
-        return this.mediaState[source].items;
+        return this.sortMediaItems(this.mediaState[source].items, source);
     };
 
     App.prototype.loadMoreMediaIfNeeded = function () {
@@ -1218,6 +1371,8 @@
                 this.renderAlbum({ name: 'album', params: { albumId: this.currentAlbumId } });
                 this.captureFocusables();
             }
+        } else if (action === 'toggleSortOrder') {
+            this.toggleSortOrder(element.getAttribute('data-source') || this.currentMediaSource());
         } else if (action === 'openDateJump') {
             this.router.navigate('dateJump');
         } else if (action === 'openVideosDateJump') {
@@ -1276,6 +1431,34 @@
             timeBucket: createMonthBucket(year, month)
         };
         this.router.reset(stateKey === 'videos' ? 'videos' : 'recent');
+    };
+
+    App.prototype.toggleSortOrder = function (source) {
+        var stateKey = source === 'videos' ? 'videos' : (source === 'albums' ? 'albums' : (source === 'album' ? 'album' : 'recent'));
+        var nextOrder = this.getSortOrder(stateKey) === 'desc' ? 'asc' : 'desc';
+        var message = nextOrder === 'desc' ? 'Sorted latest to oldest.' : 'Sorted oldest to latest.';
+
+        this.mediaSortOrder[stateKey] = nextOrder;
+
+        if (stateKey === 'albums') {
+            this.renderAlbums();
+            this.captureFocusables();
+            this.showToast(message);
+            return;
+        }
+
+        if (stateKey === 'album') {
+            this.renderAlbum({ name: 'album', params: { albumId: this.currentAlbumId } });
+            this.captureFocusables();
+            this.showToast(message);
+            return;
+        }
+
+        var filter = this.mediaState[stateKey].filter;
+        this.mediaState[stateKey] = createMediaState();
+        this.mediaState[stateKey].filter = filter;
+        this.router.reset(stateKey);
+        this.showToast(message);
     };
 
     App.prototype.saveSetup = function () {

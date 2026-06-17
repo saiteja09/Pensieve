@@ -229,9 +229,11 @@
             }
         }
 
-        return items.filter(function (item) {
+        items = items.filter(function (item) {
             return source === 'videos' ? item.type === 'video' : (item.type === 'image' || item.type === 'video');
         });
+
+        return this.sortMediaItems ? this.sortMediaItems(items, source) : items;
     };
 
     App.prototype.navigateViewer = function (direction) {
