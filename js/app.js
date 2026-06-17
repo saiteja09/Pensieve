@@ -58,6 +58,7 @@
         this.thumbnailLoads = {};
         this.thumbnailErrors = {};
         this.thumbnailTimer = null;
+        this.albumThumbnailTimer = null;
         this.viewerImageUrls = {};
         this.viewerImageLoads = {};
         this.viewerImageErrors = {};
@@ -798,11 +799,12 @@
         var preloadBefore = viewportHeight * 0.75;
         var preloadAfter = viewportHeight * 1.5;
         var now = Date.now();
+        var albumById = this.createItemLookup(albums || this.albumState.items);
 
         Array.prototype.slice.call(this.root.querySelectorAll('[data-album-cover-id]')).forEach(function (tile) {
             var albumId = tile.getAttribute('data-album-id');
             var coverId = tile.getAttribute('data-album-cover-id');
-            var album = self.findAlbum(albumId);
+            var album = albumById[albumId];
             var rect = tile.getBoundingClientRect();
 
             if (!album || !coverId) {
@@ -1529,9 +1531,25 @@
 
         if (albumsCanvas) {
             albumsCanvas.addEventListener('scroll', function () {
-                self.loadVisibleAlbumThumbnails(self.albumState.items);
+                self.queueVisibleAlbumThumbnailLoad();
             });
         }
+    };
+
+    App.prototype.currentThumbnailItems = function () {
+        var source = this.currentMediaSource();
+
+        if (source === 'album') {
+            return this.getAlbumDetail(this.currentAlbumId).items;
+        }
+
+        if (source === 'favorites') {
+            return this.mediaState.favorites.items.filter(function (item) {
+                return item.isFavorite;
+            });
+        }
+
+        return this.mediaState[source].items;
     };
 
     App.prototype.queueVisibleThumbnailLoad = function () {
@@ -1547,8 +1565,37 @@
 
         this.thumbnailTimer = global.setTimeout(function () {
             self.thumbnailTimer = null;
-            self.loadVisibleThumbnails(self.currentMediaItems());
+            self.loadVisibleThumbnails(self.currentThumbnailItems());
         }, 80);
+    };
+
+    App.prototype.queueVisibleAlbumThumbnailLoad = function () {
+        var self = this;
+
+        if (!this.root.querySelector('.album-grid')) {
+            return;
+        }
+
+        if (this.albumThumbnailTimer) {
+            global.clearTimeout(this.albumThumbnailTimer);
+        }
+
+        this.albumThumbnailTimer = global.setTimeout(function () {
+            self.albumThumbnailTimer = null;
+            self.loadVisibleAlbumThumbnails(self.albumState.items);
+        }, 80);
+    };
+
+    App.prototype.createItemLookup = function (items) {
+        var lookup = {};
+
+        (items || []).forEach(function (item) {
+            if (item && item.id) {
+                lookup[item.id] = item;
+            }
+        });
+
+        return lookup;
     };
 
     App.prototype.loadVisibleThumbnails = function (items) {
@@ -1558,10 +1605,11 @@
         var preloadBefore = viewportHeight * 0.75;
         var preloadAfter = viewportHeight * 1.5;
         var now = Date.now();
+        var mediaById = this.createItemLookup(items);
 
         Array.prototype.slice.call(this.root.querySelectorAll('[data-asset-id]')).forEach(function (tile) {
             var assetId = tile.getAttribute('data-asset-id');
-            var media = findById(items, assetId);
+            var media = mediaById[assetId];
             var rect = tile.getBoundingClientRect();
 
             if (!media) {

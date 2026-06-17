@@ -207,14 +207,19 @@
 
     function fetchWithTimeout(url, options, timeoutMs) {
         var timeoutId;
+        var controller = global.AbortController ? new global.AbortController() : null;
+        var fetchOptions = controller ? Object.assign({}, options || {}, { signal: controller.signal }) : options;
         var timeout = new Promise(function (_, reject) {
             timeoutId = global.setTimeout(function () {
+                if (controller) {
+                    controller.abort();
+                }
                 reject(new ImmichError('TIMEOUT', 'Immich server request timed out.'));
             }, timeoutMs);
         });
 
         return Promise.race([
-            global.fetch(url, options),
+            global.fetch(url, fetchOptions),
             timeout
         ]).then(function (response) {
             global.clearTimeout(timeoutId);
